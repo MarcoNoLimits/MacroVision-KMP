@@ -3,6 +3,9 @@ package com.fitter.app
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
+import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -66,7 +69,34 @@ actual fun getLastSevenDays(): List<Pair<String, String>> {
 
 actual fun compressImage(imageBytes: ByteArray): ByteArray {
     try {
-        val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size) ?: return imageBytes
+        // Parse EXIF orientation to detect vertical/portrait rotation
+        val inputStream = ByteArrayInputStream(imageBytes)
+        val exif = ExifInterface(inputStream)
+        val orientation = exif.getAttributeInt(
+            ExifInterface.TAG_ORIENTATION,
+            ExifInterface.ORIENTATION_NORMAL
+        )
+        
+        val rotationDegrees = when (orientation) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> 90
+            ExifInterface.ORIENTATION_ROTATE_180 -> 180
+            ExifInterface.ORIENTATION_ROTATE_270 -> 270
+            else -> 0
+        }
+
+        var bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size) ?: return imageBytes
+
+        // Rotate the bitmap if orientation is sideways
+        if (rotationDegrees != 0) {
+            val matrix = Matrix()
+            matrix.postRotate(rotationDegrees.toFloat())
+            val rotatedBitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+            if (rotatedBitmap != bitmap) {
+                bitmap.recycle()
+                bitmap = rotatedBitmap
+            }
+        }
+
         val width = bitmap.width
         val height = bitmap.height
         val maxDimension = 768
