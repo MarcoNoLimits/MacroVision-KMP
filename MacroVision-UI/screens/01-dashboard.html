@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #FFFFFF;
+            --fg: #0F172A;
+            --accent: #10B981;
+            --muted: #64748B;
+            --border: #E2E8F0;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg);
+            color: var(--fg);
+            -webkit-font-smoothing: antialiased;
+        }
+        .mono { font-family: 'JetBrains Mono', monospace; }
+        @keyframes pulse-emerald {
+            0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+            70% { transform: scale(1.05); box-shadow: 0 0 0 15px rgba(16, 185, 129, 0); }
+            100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+        .animate-pulse-emerald { animation: pulse-emerald 2s infinite; }
+        .progress-track { background: var(--border); height: 12px; border-radius: 9999px; overflow: hidden; }
+        .progress-fill { background: var(--accent); height: 100%; border-radius: 9999px; transition: width 1s ease-out; }
+    </style>
+</head>
+<body class="bg-white text-[#0F172A] p-6 h-screen overflow-hidden flex flex-col">
+    <!-- Header: Progress -->
+    <header class="mb-8">
+        <div class="flex justify-between items-end mb-3">
+            <h1 class="text-2xl font-bold tracking-tight">Today</h1>
+            <p class="text-sm font-semibold"><span class="text-[#10B981]">1,420</span> <span class="text-slate-400">/ 2,200 kcal</span></p>
+        </div>
+        <div class="progress-track">
+            <div class="progress-fill" style="width: 65%;"></div>
+        </div>
+    </header>
+
+    <!-- Macro Strip -->
+    <div class="flex gap-3 mb-8 overflow-x-auto pb-2 no-scrollbar">
+        <!-- Calories -->
+        <div class="bg-slate-50 border border-slate-100 p-3 rounded-2xl min-w-[100px] flex-1">
+            <p class="text-[10px] uppercase tracking-wider font-bold text-slate-400 mb-1">Calories</p>
+            <p class="mono text-lg font-bold">1,420</p>
+            <p class="text-[10px] font-medium text-slate-500">65% of goal</p>
+        </div>
+        <!-- Protein -->
+        <div class="bg-slate-50 border border-slate-100 p-3 rounded-2xl min-w-[100px] flex-1">
+            <p class="text-[10px] uppercase tracking-wider font-bold text-slate-400 mb-1">Protein</p>
+            <p class="mono text-lg font-bold">112g</p>
+            <p class="text-[10px] font-medium text-slate-500">80% of goal</p>
+        </div>
+        <!-- Carbs -->
+        <div class="bg-slate-50 border border-slate-100 p-3 rounded-2xl min-w-[100px] flex-1">
+            <p class="text-[10px] uppercase tracking-wider font-bold text-slate-400 mb-1">Carbs</p>
+            <p class="mono text-lg font-bold">145g</p>
+            <p class="text-[10px] font-medium text-slate-500">50% of goal</p>
+        </div>
+        <!-- Fats -->
+        <div class="bg-slate-50 border border-slate-100 p-3 rounded-2xl min-w-[100px] flex-1">
+            <p class="text-[10px] uppercase tracking-wider font-bold text-slate-400 mb-1">Fats</p>
+            <p class="mono text-lg font-bold|">42g</p>
+            <p class="text-[10px] font-medium text-slate-500">45% of goal</p>
+        </div>
+    </div>
+
+    <!-- Hero Action: Camera Interface -->
+    <div class="flex-1 flex flex-col">
+        <div class="flex-1 bg-slate-900 rounded-[32px] overflow-hidden relative border-4 border-slate-100 shadow-xl group">
+            <!-- Simulated Camera Feed -->
+            <img src="https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=1000" class="w-full h-full object-cover opacity-80" alt="Camera feed preview">
+            
+            <!-- Viewfinder Brackets -->
+            <div class="absolute inset-8 border-2 border-white/30 rounded-2xl">
+                <div class="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-white -mt-1 -ml-1 rounded-tl-lg"></div>
+                <div class="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-white -mt-1 -mr-1 rounded-tr-lg"></div>
+                <div class="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-white -mb-1 -ml-1 rounded-bl-lg"></div>
+                <div class="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-white -mb-1 -mr-1 rounded-br-lg"></div>
+            </div>
+
+            <!-- Overlay Labels -->
+            <div class="absolute top-6 left-1/2 -translate-x-1/2 bg-black/40 backdrop-blur-md px-4 py-1.5 rounded-full border border-white/20">
+                <p class="text-[10px] text-white font-bold uppercase tracking-widest">MacroVision Active</p>
+            </div>
+
+            <!-- Bottom Controls -->
+            <div class="absolute bottom-10 left-0 right-0 flex justify-center items-center px-10">
+                <div class="w-12 h-12 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+                </div>
+                <button onclick="window.parent.postMessage('start-scan', '*')" class="mx-8 w-20 h-20 rounded-full bg-white p-1 shadow-2xl animate-pulse-emerald">
+                    <div class="w-full h-full rounded-full border-4 border-[#0F172A] flex items-center justify-center">
+                        <div class="w-12 h-12 rounded-full bg-[#10B981]"></div>
+                    </div>
+                </button>
+                <div class="w-12 h-12 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-9 9 9 9 0 0 1-9-9 9 9 0 0 1 9-9 9 9 0 0 1 9 9Z"/><path d="M12 8v4l3 3"/></svg>
+                </div>
+            </div>
+        </div>
+        <p class="text-center text-slate-400 text-sm font-medium mt-6">Snap your meal to start tracking</p>
+    </div>
+</body>
+</html>

@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #FFFFFF;
+            --fg: #0F172A;
+            --accent: #10B981;
+            --muted: #64748B;
+            --border: #E2E8F0;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #F8FAFC;
+            color: var(--fg);
+            -webkit-font-smoothing: antialiased;
+        }
+        .mono { font-family: 'JetBrains Mono', monospace; }
+        .input-pill { background: #fff; border: 1px solid var(--border); border-radius: 9999px; padding: 4px 12px; font-family: 'JetBrains Mono', monospace; width: 60px; text-align: right; }
+        .input-pill:focus { outline: none; border-color: var(--accent); }
+    </style>
+</head>
+<body class="p-6 h-screen flex flex-col">
+    <!-- Close Button -->
+    <div class="flex justify-between items-center mb-6">
+        <h2 class="text-xl font-bold">Review Meal</h2>
+        <button class="w-10 h-10 rounded-full bg-white border border-slate-200 flex items-center justify-center shadow-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+    </div>
+
+    <!-- Main Card -->
+    <div class="bg-white rounded-[32px] border border-slate-200 shadow-xl shadow-slate-200/50 overflow-hidden flex-1 flex flex-col">
+        <!-- Top Section: Visuals & List -->
+        <div class="p-6 flex gap-6 border-b border-slate-100">
+            <div class="w-32 h-48 rounded-2xl overflow-hidden shadow-inner bg-slate-100">
+                <img src="https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=1000" class="w-full h-full object-cover" alt="Meal">
+            </div>
+            <div class="flex-1 flex flex-col">
+                <p class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-4">Detected Ingredients</p>
+                <div class="space-y-4">
+                    <div class="flex items-center justify-between">
+                        <p class="font-bold text-sm">Avocado Bowl</p>
+                        <div class="flex items-center gap-2">
+                            <input type="text" value="240" class="input-pill text-xs font-bold">
+                            <span class="text-[10px] font-bold text-slate-400">g</span>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <p class="font-bold text-sm">Quinoa</p>
+                        <div class="flex items-center gap-2">
+                            <input type="text" value="120" class="input-pill text-xs font-bold">
+                            <span class="text-[10px] font-bold text-slate-400">g</span>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <p class="font-bold text-sm">Hard Boiled Egg</p>
+                        <div class="flex items-center gap-2">
+                            <input type="text" value="60" class="input-pill text-xs font-bold">
+                            <span class="text-[10px] font-bold text-slate-400">g</span>
+                        </div>
+                    </div>
+                </div>
+                <button class="mt-auto flex items-center gap-2 text-[#10B981] font-bold text-xs">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                    Add Item
+                </button>
+            </div>
+        </div>
+
+        <!-- Middle Section: Macro Breakdown -->
+        <div class="p-6 bg-slate-50/50 flex-1">
+             <p class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-6">Calculated Macros</p>
+             <div class="grid grid-cols-2 gap-4">
+                <div class="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+                    <div class="flex items-center justify-between mb-2">
+                        <p class="text-[10px] font-bold uppercase text-slate-400">Calories</p>
+                        <div class="w-1.5 h-1.5 rounded-full bg-[#10B981]"></div>
+                    </div>
+                    <p class="text-xl font-bold mono">542 <span class="text-xs text-slate-400">kcal</span></p>
+                </div>
+                <div class="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+                    <div class="flex items-center justify-between mb-2">
+                        <p class="text-[10px] font-bold uppercase text-slate-400">Protein</p>
+                        <div class="w-1.5 h-1.5 rounded-full bg-emerald-400"></div>
+                    </div>
+                    <p class="text-xl font-bold mono">24g <span class="text-xs text-slate-400">42%</span></p>
+                </div>
+                <div class="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+                    <div class="flex items-center justify-between mb-2">
+                        <p class="text-[10px] font-bold uppercase text-slate-400">Carbs</p>
+                        <div class="w-1.5 h-1.5 rounded-full bg-blue-400"></div>
+                    </div>
+                    <p class="text-xl font-bold mono">38g <span class="text-xs text-slate-400">22%</span></p>
+                </div>
+                <div class="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+                    <div class="flex items-center justify-between mb-2">
+                        <p class="text-[10px] font-bold uppercase text-slate-400">Fats</p>
+                        <div class="w-1.5 h-1.5 rounded-full bg-amber-400"></div>
+                    </div>
+                    <p class="text-xl font-bold mono">14g <span class="text-xs text-slate-400">18%</span></p>
+                </div>
+             </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="p-6 pt-0 flex flex-col gap-3">
+            <button onclick="window.parent.postMessage('log-complete', '*')" class="w-full py-4 bg-[#10B981] text-white rounded-2xl font-bold text-sm shadow-lg shadow-emerald-200 active:scale-[0.98] transition-transform">
+                Log Meal to Dashboard
+            </button>
+            <button class="w-full py-4 bg-white border border-slate-200 text-slate-400 rounded-2xl font-bold text-sm active:scale-[0.98] transition-transform">
+                Recapture
+            </button>
+        </div>
+    </div>
+</body>
+</html>
