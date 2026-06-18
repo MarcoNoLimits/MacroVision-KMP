@@ -12,13 +12,13 @@ class FailoverNutritionClient(
     private val geminiClient = GeminiClient()
     private val groqClient = GroqClient()
 
-    override suspend fun analyzeMealImage(base64Image: String): NutritionResponse {
+    override suspend fun analyzeMealImage(base64Image: String, plateSizeInches: Float?): NutritionResponse {
         val errors = mutableListOf<String>()
 
         // 1. Try OpenRouter if configured
         if (isOpenRouterConfigured()) {
             try {
-                return openRouterClient.analyzeMealImage(base64Image, openRouterKey)
+                return openRouterClient.analyzeMealImage(base64Image, openRouterKey, plateSizeInches = plateSizeInches)
             } catch (e: Exception) {
                 errors.add("OpenRouter error: ${e.message}")
             }
@@ -27,7 +27,7 @@ class FailoverNutritionClient(
         // 2. Try Gemini if configured
         if (isGeminiConfigured()) {
             try {
-                return geminiClient.analyzeMealImage(base64Image, geminiKey)
+                return geminiClient.analyzeMealImage(base64Image, geminiKey, plateSizeInches = plateSizeInches)
             } catch (e: Exception) {
                 errors.add("Gemini error: ${e.message}")
             }
@@ -36,7 +36,7 @@ class FailoverNutritionClient(
         // 3. Try Groq if configured
         if (isGroqConfigured()) {
             try {
-                return groqClient.analyzeMealImage(base64Image, groqKey)
+                return groqClient.analyzeMealImage(base64Image, groqKey, plateSizeInches = plateSizeInches)
             } catch (e: Exception) {
                 errors.add("Groq error: ${e.message}")
             }

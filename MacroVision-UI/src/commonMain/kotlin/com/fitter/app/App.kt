@@ -45,6 +45,8 @@ import androidx.navigation.toRoute
 import coil3.compose.AsyncImage
 import com.fitter.shared.api.NutritionClient
 import com.fitter.shared.api.FailoverNutritionClient
+import com.fitter.shared.api.FoodDatabase
+import com.fitter.shared.api.FoodDbEntry
 import com.fitter.shared.model.FoodItem
 import com.fitter.shared.model.NutritionResponse
 import com.fitter.shared.model.Totals
@@ -82,7 +84,6 @@ val ProteinColor = Color(0xFF34D399)    // Emerald 400
 val CarbsColor = Color(0xFF60A5FA)      // Blue 400
 val FatColor = Color(0xFFFBBF24)        // Amber 400
 
-// Data Models
 @Serializable
 data class UserProfile(
     val weight: Float,
@@ -93,7 +94,8 @@ data class UserProfile(
     val fatGoal: Int,
     val age: Int = 25,
     val gender: String = "Male",
-    val goalType: String = "Maintain"
+    val goalType: String = "Maintain",
+    val defaultPlateSize: Float = 9.0f
 )
 
 @Serializable
@@ -256,6 +258,7 @@ fun App() {
                     CameraScreen(
                         apiClient = apiClient,
                         isMockMode = isMockMode,
+                        plateSizeInches = userProfile.value.defaultPlateSize,
                         onPhotoCaptured = { bytes ->
                             lastCapturedImageBytes = bytes
                         },
@@ -1018,6 +1021,7 @@ fun DashboardMacroCard(
 fun CameraScreen(
     apiClient: NutritionClient,
     isMockMode: Boolean,
+    plateSizeInches: Float?,
     onPhotoCaptured: (ByteArray) -> Unit,
     onResultObtained: (String) -> Unit,
     onNavigateBack: () -> Unit
@@ -1043,7 +1047,7 @@ fun CameraScreen(
                                 getMockJson()
                             } else {
                                 val base64 = compressedBytes.encodeBase64()
-                                val response = apiClient.analyzeMealImage(base64)
+                                val response = apiClient.analyzeMealImage(base64, plateSizeInches)
                                 Json.encodeToString(NutritionResponse.serializer(), response)
                             }
                             onResultObtained(responseJson)
@@ -1217,6 +1221,8 @@ fun ResultScreen(
 
     var showAddItemDialog by remember { mutableStateOf(false) }
     var showSuccessDialog by remember { mutableStateOf(false) }
+    var activeSwapIndex by remember { mutableStateOf<Int?>(null) }
+    var showAddDbItemDialog by remember { mutableStateOf(false) }
 
     val isEdited = remember(editableItems.map { it.name }) {
         if (editableItems.size != data.items.size) {
@@ -1373,22 +1379,51 @@ fun ResultScreen(
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        BasicTextField(
-                                            value = item.name,
-                                            onValueChange = { newName ->
-                                                editableItems[index] = item.copy(name = newName)
-                                            },
-                                            textStyle = MaterialTheme.typography.bodyMedium.copy(
-                                                fontWeight = FontWeight.Bold,
-                                                color = TextColor
-                                            ),
-                                            singleLine = true,
+                                        Column(
                                             modifier = Modifier
                                                 .weight(1f)
                                                 .padding(end = 8.dp)
-                                                .background(Color(0xFFF1F5F9), RoundedCornerShape(8.dp))
-                                                .padding(horizontal = 8.dp, vertical = 6.dp)
-                                        )
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .background(Color(0xFFF1F5F9), RoundedCornerShape(8.dp))
+                                                    .clickable { activeSwapIndex = index }
+                                                    .padding(horizontal = 8.dp, vertical = 6.dp)
+                                            ) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    modifier = Modifier.fillMaxWidth()
+                                                ) {
+                                                    Text(
+                                                        text = item.name,
+                                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = TextColor
+                                                        ),
+                                                        maxLines = 1
+                                                    )
+                                                    Text(
+                                                        text = "🔍",
+                                                        fontSize = 10.sp,
+                                                        modifier = Modifier.alpha(0.5f)
+                                                    )
+                                                }
+                                            }
+
+                                            val itemWeight = item.currentWeightStr.toIntOrNull() ?: 0
+                                            val itemCalories = (item.calPerGram * itemWeight).toInt()
+                                            val itemProtein = (item.proteinPerGram * itemWeight)
+                                            val itemCarbs = (item.carbsPerGram * itemWeight)
+                                            val itemFat = (item.fatPerGram * itemWeight)
+                                            Text(
+                                                text = "$itemCalories kcal | P: ${itemProtein.toInt()}g C: ${itemCarbs.toInt()}g F: ${itemFat.toInt()}g",
+                                                fontSize = 11.sp,
+                                                color = MutedTextColor,
+                                                modifier = Modifier.padding(start = 8.dp, top = 2.dp)
+                                            )
+                                        }
 
                                         WeightInputPill(
                                             weightStr = item.currentWeightStr,
@@ -1396,6 +1431,22 @@ fun ResultScreen(
                                                 editableItems[index] = item.copy(currentWeightStr = newWeight)
                                             }
                                         )
+
+                                        Spacer(modifier = Modifier.width(4.dp))
+
+                                        IconButton(
+                                            onClick = {
+                                                editableItems.removeAt(index)
+                                            },
+                                            modifier = Modifier.size(24.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Close,
+                                                contentDescription = "Delete",
+                                                tint = Color(0xFFEF4444),
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -1405,7 +1456,7 @@ fun ResultScreen(
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
-                                .clickable { showAddItemDialog = true }
+                                .clickable { showAddDbItemDialog = true }
                                 .padding(top = 16.dp)
                         ) {
                             Icon(
@@ -1749,6 +1800,251 @@ fun ResultScreen(
             }
         }
     }
+
+    // ----------------------------------------------------
+    // dialog 3: Swap Item from Database Dialog
+    // ----------------------------------------------------
+    activeSwapIndex?.let { swapIndex ->
+        var swapSearchQuery by remember { mutableStateOf("") }
+        val swapFilteredFoods = remember(swapSearchQuery) {
+            if (swapSearchQuery.isBlank()) {
+                FoodDatabase.foods
+            } else {
+                FoodDatabase.foods.filter {
+                    it.name.contains(swapSearchQuery, ignoreCase = true) ||
+                    it.synonyms.any { syn -> syn.contains(swapSearchQuery, ignoreCase = true) }
+                }
+            }
+        }
+        
+        Dialog(onDismissRequest = { activeSwapIndex = null }) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(24.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, BorderColor, RoundedCornerShape(24.dp))
+                    .padding(4.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = "Swap with Database Food",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextColor
+                    )
+                    
+                    OutlinedTextField(
+                        value = swapSearchQuery,
+                        onValueChange = { swapSearchQuery = it },
+                        label = { Text("Search Food Database") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    
+                    Box(modifier = Modifier.height(200.dp).fillMaxWidth()) {
+                        val listState = rememberScrollState()
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(listState),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            swapFilteredFoods.forEach { food ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Color(0xFFF1F5F9), RoundedCornerShape(8.dp))
+                                        .clickable {
+                                            val currentItem = editableItems[swapIndex]
+                                            editableItems[swapIndex] = currentItem.copy(
+                                                name = food.name,
+                                                calPerGram = (food.calories / 100.0).toFloat(),
+                                                proteinPerGram = food.protein / 100.0f,
+                                                carbsPerGram = food.carbs / 100.0f,
+                                                fatPerGram = food.fat / 100.0f
+                                            )
+                                            activeSwapIndex = null
+                                        }
+                                        .padding(12.dp)
+                                ) {
+                                    Column {
+                                        Text(
+                                            text = food.name,
+                                            fontSize = 14.sp,
+                                            color = TextColor,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "Per 100g: ${food.calories.toInt()} kcal | P: ${food.protein.toInt()}g C: ${food.carbs.toInt()}g F: ${food.fat.toInt()}g",
+                                            fontSize = 11.sp,
+                                            color = MutedTextColor
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    Row(
+                        horizontalArrangement = Arrangement.End,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        TextButton(onClick = { activeSwapIndex = null }) {
+                            Text("Cancel", color = MutedTextColor)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ----------------------------------------------------
+    // dialog 4: Add Item from Database Dialog
+    // ----------------------------------------------------
+    if (showAddDbItemDialog) {
+        var searchQuery by remember { mutableStateOf("") }
+        var selectedFoodEntry by remember { mutableStateOf<FoodDbEntry?>(null) }
+        var weightStr by remember { mutableStateOf("100") }
+        
+        val filteredFoods = remember(searchQuery) {
+            if (searchQuery.isBlank()) {
+                FoodDatabase.foods
+            } else {
+                FoodDatabase.foods.filter {
+                    it.name.contains(searchQuery, ignoreCase = true) ||
+                    it.synonyms.any { syn -> syn.contains(searchQuery, ignoreCase = true) }
+                }
+            }
+        }
+        
+        Dialog(onDismissRequest = { showAddDbItemDialog = false }) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(24.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, BorderColor, RoundedCornerShape(24.dp))
+                    .padding(4.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = "Add Item from Database",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextColor
+                    )
+                    
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { 
+                            searchQuery = it 
+                            selectedFoodEntry = null
+                        },
+                        label = { Text("Search Food Database") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    
+                    selectedFoodEntry?.let { entry ->
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(PrimaryAccent.copy(alpha = 0.1f), RoundedCornerShape(12.dp))
+                                .padding(12.dp)
+                        ) {
+                            Text(
+                                text = "Selected: ${entry.name} (P: ${entry.protein}g, C: ${entry.carbs}g, F: ${entry.fat}g per 100g)",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = PrimaryAccent
+                            )
+                        }
+                    }
+                    
+                    Box(modifier = Modifier.height(150.dp).fillMaxWidth()) {
+                        val listState = rememberScrollState()
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(listState),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            filteredFoods.forEach { food ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(
+                                            if (selectedFoodEntry == food) PrimaryAccent.copy(alpha = 0.2f) 
+                                            else Color(0xFFF1F5F9), 
+                                            RoundedCornerShape(8.dp)
+                                        )
+                                        .clickable { selectedFoodEntry = food }
+                                        .padding(12.dp)
+                                ) {
+                                    Text(
+                                        text = food.name,
+                                        fontSize = 14.sp,
+                                        color = TextColor,
+                                        fontWeight = if (selectedFoodEntry == food) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    
+                    OutlinedTextField(
+                        value = weightStr,
+                        onValueChange = { weightStr = it },
+                        label = { Text("Weight (grams)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    
+                    Row(
+                        horizontalArrangement = Arrangement.End,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        TextButton(onClick = { showAddDbItemDialog = false }) {
+                            Text("Cancel", color = MutedTextColor)
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(
+                            onClick = {
+                                val food = selectedFoodEntry
+                                val weight = weightStr.toIntOrNull()
+                                if (food != null && weight != null && weight > 0) {
+                                    val newItem = EditableFoodItem(
+                                        id = "${food.name}_${editableItems.size}_${getCurrentTimeString()}",
+                                        name = food.name,
+                                        currentWeightStr = weight.toString(),
+                                        calPerGram = (food.calories / 100.0).toFloat(),
+                                        proteinPerGram = food.protein / 100.0f,
+                                        carbsPerGram = food.carbs / 100.0f,
+                                        fatPerGram = food.fat / 100.0f,
+                                        confidence = "high"
+                                    )
+                                    editableItems.add(newItem)
+                                    showAddDbItemDialog = false
+                                }
+                            },
+                            enabled = selectedFoodEntry != null && (weightStr.toIntOrNull() ?: 0) > 0,
+                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryAccent)
+                        ) {
+                            Text("Add", color = Color.White)
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 // ----------------------------------------------------
@@ -1773,8 +2069,7 @@ fun SettingsScreen(
     var proteinGoalStr by remember { mutableStateOf(profile.proteinGoal.toString()) }
     var carbsGoalStr by remember { mutableStateOf(profile.carbsGoal.toString()) }
     var fatGoalStr by remember { mutableStateOf(profile.fatGoal.toString()) }
-
-
+    var plateSize by remember { mutableStateOf(profile.defaultPlateSize) }
 
     var isError by remember { mutableStateOf(false) }
 
@@ -1995,6 +2290,47 @@ fun SettingsScreen(
             }
         }
 
+        // Section: Plate Settings Card
+        Card(
+            colors = CardDefaults.cardColors(containerColor = CardBackground),
+            shape = RoundedCornerShape(24.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .shadow(2.dp, RoundedCornerShape(24.dp))
+                .border(1.dp, BorderColor, RoundedCornerShape(24.dp))
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = "PLATE SETTINGS",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MutedTextColor,
+                    letterSpacing = 1.sp
+                )
+
+                Text(
+                    text = "Default Plate Size: $plateSize inches",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextColor
+                )
+
+                Slider(
+                    value = plateSize,
+                    onValueChange = { plateSize = kotlin.math.round(it * 2.0f) / 2.0f },
+                    valueRange = 6.0f..12.0f,
+                    colors = SliderDefaults.colors(
+                        activeTrackColor = PrimaryAccent,
+                        inactiveTrackColor = BorderColor,
+                        thumbColor = PrimaryAccent
+                    )
+                )
+            }
+        }
+
         // Section 3: Daily Target Goals Override
         Card(
             colors = CardDefaults.cardColors(containerColor = CardBackground),
@@ -2100,7 +2436,8 @@ fun SettingsScreen(
                             calGoal = calories,
                             proteinGoal = protein,
                             carbsGoal = carbs,
-                            fatGoal = fat
+                            fatGoal = fat,
+                            defaultPlateSize = plateSize
                         )
                     )
                 } else {

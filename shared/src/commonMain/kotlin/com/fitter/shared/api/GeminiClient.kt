@@ -79,12 +79,12 @@ class GeminiClient(
         }
     }
 
-    override suspend fun analyzeMealImage(base64Image: String): NutritionResponse {
-        return analyzeMealImage(base64Image, apiKey, model)
+    override suspend fun analyzeMealImage(base64Image: String, plateSizeInches: Float?): NutritionResponse {
+        return analyzeMealImage(base64Image, apiKey, model, plateSizeInches)
     }
 
-    suspend fun analyzeMealImage(base64Image: String, apiKey: String, model: String? = null): NutritionResponse {
-        val systemPrompt = """
+    suspend fun analyzeMealImage(base64Image: String, apiKey: String, model: String? = null, plateSizeInches: Float? = null): NutritionResponse {
+        var systemPrompt = """
             You are a professional nutritionist. Analyze the food in this image.
             Return ONLY a valid JSON object — no prose, no markdown fences, no explanation.
             Use this exact structure:
@@ -110,6 +110,10 @@ class GeminiClient(
               "estimation_notes": "string"
             }
         """.trimIndent()
+
+        if (plateSizeInches != null) {
+            systemPrompt += "\n\nNOTE: The user's plate size is exactly ${plateSizeInches} inches. Use this reference dimension to calibrate your spatial/volume calculations of portion sizes."
+        }
 
         val requestModel = model ?: this.model
         val request = GeminiRequest(
