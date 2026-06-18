@@ -1323,158 +1323,156 @@ fun ResultScreen(
                 .border(1.dp, BorderColor, RoundedCornerShape(32.dp))
         ) {
             Column {
-                // Top Section: Visuals & List
-                Row(
+                // Banner Image at the top
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(24.dp),
-                    horizontalArrangement = Arrangement.spacedBy(24.dp)
+                        .height(200.dp)
+                        .clip(RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp))
+                        .background(Color(0xFFF1F5F9))
                 ) {
-                    // Meal Image Viewport on the left
-                    Box(
-                        modifier = Modifier
-                            .width(110.dp)
-                            .height(170.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(Color(0xFFF1F5F9))
-                    ) {
-                        if (capturedImageBytes != null) {
-                            AsyncImage(
-                                model = capturedImageBytes,
-                                contentDescription = "Meal Photo",
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                            )
-                        } else {
-                            // Fallback to beautiful mockup salad image
-                            AsyncImage(
-                                model = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=1000",
-                                contentDescription = "Fallback Salad",
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                            )
-                        }
+                    if (capturedImageBytes != null) {
+                        AsyncImage(
+                            model = capturedImageBytes,
+                            contentDescription = "Meal Photo",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                        )
+                    } else {
+                        // Fallback to beautiful mockup salad image
+                        AsyncImage(
+                            model = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=1000",
+                            contentDescription = "Fallback Salad",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                        )
                     }
+                }
 
-                    // Ingredients list on the right
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column {
-                            Text(
-                                text = "DETECTED INGREDIENTS",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = 1.sp
-                                ),
-                                color = MutedTextColor,
-                                modifier = Modifier.padding(bottom = 12.dp)
-                            )
+                // Ingredients list below the image
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp)
+                ) {
+                    Text(
+                        text = "DETECTED INGREDIENTS",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.sp
+                        ),
+                        color = MutedTextColor,
+                        modifier = Modifier.padding(bottom = 16.dp)
+                    )
 
-                            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                                editableItems.forEachIndexed { index, item ->
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
+                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        editableItems.forEachIndexed { index, item ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(end = 4.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(Color(0xFFF1F5F9), RoundedCornerShape(12.dp))
+                                            .clickable { activeSwapIndex = index }
+                                            .padding(horizontal = 12.dp, vertical = 8.dp)
                                     ) {
-                                        Column(
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .padding(end = 8.dp)
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            modifier = Modifier.fillMaxWidth()
                                         ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .background(Color(0xFFF1F5F9), RoundedCornerShape(8.dp))
-                                                    .clickable { activeSwapIndex = index }
-                                                    .padding(horizontal = 8.dp, vertical = 6.dp)
-                                            ) {
-                                                Row(
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                                    modifier = Modifier.fillMaxWidth()
-                                                ) {
-                                                    Text(
-                                                        text = item.name,
-                                                        style = MaterialTheme.typography.bodyMedium.copy(
-                                                            fontWeight = FontWeight.Bold,
-                                                            color = TextColor
-                                                        ),
-                                                        maxLines = 1
-                                                    )
-                                                    Text(
-                                                        text = "🔍",
-                                                        fontSize = 10.sp,
-                                                        modifier = Modifier.alpha(0.5f)
-                                                    )
-                                                }
-                                            }
-
-                                            val itemWeight = item.currentWeightStr.toIntOrNull() ?: 0
-                                            val itemCalories = (item.calPerGram * itemWeight).toInt()
-                                            val itemProtein = (item.proteinPerGram * itemWeight)
-                                            val itemCarbs = (item.carbsPerGram * itemWeight)
-                                            val itemFat = (item.fatPerGram * itemWeight)
                                             Text(
-                                                text = "$itemCalories kcal | P: ${itemProtein.toInt()}g C: ${itemCarbs.toInt()}g F: ${itemFat.toInt()}g",
+                                                text = item.name,
+                                                style = MaterialTheme.typography.bodyMedium.copy(
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = TextColor
+                                                ),
+                                                maxLines = 1
+                                            )
+                                            Text(
+                                                text = "🔍 Swap",
                                                 fontSize = 11.sp,
-                                                color = MutedTextColor,
-                                                modifier = Modifier.padding(start = 8.dp, top = 2.dp)
+                                                color = PrimaryAccent,
+                                                fontWeight = FontWeight.Bold
                                             )
                                         }
+                                    }
 
-                                        WeightInputPill(
-                                            weightStr = item.currentWeightStr,
-                                            onWeightChanged = { newWeight ->
-                                                editableItems[index] = item.copy(currentWeightStr = newWeight)
-                                            }
+                                    val itemWeight = item.currentWeightStr.toIntOrNull() ?: 0
+                                    val itemCalories = (item.calPerGram * itemWeight).toInt()
+                                    val itemProtein = (item.proteinPerGram * itemWeight)
+                                    val itemCarbs = (item.carbsPerGram * itemWeight)
+                                    val itemFat = (item.fatPerGram * itemWeight)
+                                    Text(
+                                        text = "$itemCalories kcal  •  P: ${itemProtein.toInt()}g  C: ${itemCarbs.toInt()}g  F: ${itemFat.toInt()}g",
+                                        fontSize = 12.sp,
+                                        color = MutedTextColor,
+                                        modifier = Modifier.padding(start = 8.dp, top = 4.dp)
+                                    )
+                                }
+
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    WeightInputPill(
+                                        weightStr = item.currentWeightStr,
+                                        onWeightChanged = { newWeight ->
+                                            editableItems[index] = item.copy(currentWeightStr = newWeight)
+                                        }
+                                    )
+
+                                    IconButton(
+                                        onClick = {
+                                            editableItems.removeAt(index)
+                                        },
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .background(Color(0xFFFEF2F2), CircleShape)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Delete",
+                                            tint = Color(0xFFEF4444),
+                                            modifier = Modifier.size(16.dp)
                                         )
-
-                                        Spacer(modifier = Modifier.width(4.dp))
-
-                                        IconButton(
-                                            onClick = {
-                                                editableItems.removeAt(index)
-                                            },
-                                            modifier = Modifier.size(24.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Close,
-                                                contentDescription = "Delete",
-                                                tint = Color(0xFFEF4444),
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                        }
                                     }
                                 }
                             }
                         }
+                    }
 
-                        // Add Item Button
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .clickable { showAddDbItemDialog = true }
-                                .padding(top = 16.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Add,
-                                contentDescription = "Add",
-                                tint = PrimaryAccent,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "Add Item",
-                                color = PrimaryAccent,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+                    // Add Item Button
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clickable { showAddDbItemDialog = true }
+                            .padding(top = 20.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "Add",
+                            tint = PrimaryAccent,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Add Item from Database",
+                            color = PrimaryAccent,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
+
 
                 // Middle Section: Macro Breakdown (Slate background grid)
                 Box(
