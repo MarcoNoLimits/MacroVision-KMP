@@ -1367,83 +1367,100 @@ fun ResultScreen(
 
                     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         editableItems.forEachIndexed { index, item ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(CardBackground)
+                                    .padding(vertical = 4.dp)
                             ) {
-                                Column(
+                                // Row 1: Name Pill (Clickable to swap)
+                                Box(
                                     modifier = Modifier
-                                        .weight(1f)
-                                        .padding(end = 4.dp)
+                                        .fillMaxWidth()
+                                        .background(Color(0xFFF1F5F9), RoundedCornerShape(12.dp))
+                                        .clickable { activeSwapIndex = index }
+                                        .padding(horizontal = 12.dp, vertical = 10.dp)
                                 ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .background(Color(0xFFF1F5F9), RoundedCornerShape(12.dp))
-                                            .clickable { activeSwapIndex = index }
-                                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        modifier = Modifier.fillMaxWidth()
                                     ) {
+                                        Text(
+                                            text = item.name,
+                                            style = MaterialTheme.typography.bodyMedium.copy(
+                                                fontWeight = FontWeight.Bold,
+                                                color = TextColor
+                                            ),
+                                            maxLines = 1,
+                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f).padding(end = 8.dp)
+                                        )
                                         Row(
                                             verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            modifier = Modifier.fillMaxWidth()
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                                         ) {
                                             Text(
-                                                text = item.name,
-                                                style = MaterialTheme.typography.bodyMedium.copy(
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = TextColor
-                                                ),
-                                                maxLines = 1
+                                                text = "🔍",
+                                                fontSize = 11.sp
                                             )
                                             Text(
-                                                text = "🔍 Swap",
+                                                text = "Swap",
                                                 fontSize = 11.sp,
                                                 color = PrimaryAccent,
                                                 fontWeight = FontWeight.Bold
                                             )
                                         }
                                     }
+                                }
 
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                // Row 2: Macros (Left) & Controls (Right)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
                                     val itemWeight = item.currentWeightStr.toIntOrNull() ?: 0
                                     val itemCalories = (item.calPerGram * itemWeight).toInt()
                                     val itemProtein = (item.proteinPerGram * itemWeight)
                                     val itemCarbs = (item.carbsPerGram * itemWeight)
                                     val itemFat = (item.fatPerGram * itemWeight)
+                                    
                                     Text(
-                                        text = "$itemCalories kcal  •  P: ${itemProtein.toInt()}g  C: ${itemCarbs.toInt()}g  F: ${itemFat.toInt()}g",
+                                        text = "$itemCalories kcal  •  P: ${itemProtein.toInt()}g C: ${itemCarbs.toInt()}g F: ${itemFat.toInt()}g",
                                         fontSize = 12.sp,
                                         color = MutedTextColor,
-                                        modifier = Modifier.padding(start = 8.dp, top = 4.dp)
-                                    )
-                                }
-
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    WeightInputPill(
-                                        weightStr = item.currentWeightStr,
-                                        onWeightChanged = { newWeight ->
-                                            editableItems[index] = item.copy(currentWeightStr = newWeight)
-                                        }
+                                        modifier = Modifier.weight(1f).padding(end = 8.dp)
                                     )
 
-                                    IconButton(
-                                        onClick = {
-                                            editableItems.removeAt(index)
-                                        },
-                                        modifier = Modifier
-                                            .size(32.dp)
-                                            .background(Color(0xFFFEF2F2), CircleShape)
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Close,
-                                            contentDescription = "Delete",
-                                            tint = Color(0xFFEF4444),
-                                            modifier = Modifier.size(16.dp)
+                                        WeightInputPill(
+                                            weightStr = item.currentWeightStr,
+                                            onWeightChanged = { newWeight ->
+                                                editableItems[index] = item.copy(currentWeightStr = newWeight)
+                                            }
                                         )
+
+                                        IconButton(
+                                            onClick = {
+                                                editableItems.removeAt(index)
+                                            },
+                                            modifier = Modifier
+                                                .size(32.dp)
+                                                .background(Color(0xFFFEF2F2), CircleShape)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Close,
+                                                contentDescription = "Delete",
+                                                tint = Color(0xFFEF4444),
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }
