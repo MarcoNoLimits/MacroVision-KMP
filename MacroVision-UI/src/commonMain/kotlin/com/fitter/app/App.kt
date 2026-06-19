@@ -299,8 +299,8 @@ fun App() {
                         },
                         onLogAgain = {
                             lastCapturedImageBytes = null
-                            navController.navigate(DashboardDestination) {
-                                popUpTo(DashboardDestination) { inclusive = true }
+                            navController.navigate(CameraDestination) {
+                                popUpTo(DashboardDestination)
                             }
                         }
                     )
@@ -1030,6 +1030,7 @@ fun CameraScreen(
     
     var isAnalyzing by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var currentCapturedBytes by remember { mutableStateOf<ByteArray?>(null) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         if (!isAnalyzing && errorMessage == null) {
@@ -1037,8 +1038,10 @@ fun CameraScreen(
                 modifier = Modifier.fillMaxSize(),
                 onPhotoCaptured = { imageBytes ->
                     val compressedBytes = compressImage(imageBytes)
+                    currentCapturedBytes = compressedBytes
                     onPhotoCaptured(compressedBytes)
                     isAnalyzing = true
+                    errorMessage = null
                     coroutineScope.launch {
                         try {
                             val responseJson = if (isMockMode) {
@@ -1136,48 +1139,110 @@ fun CameraScreen(
                         )
                         
                         Text(
-                            text = "Could not analyze image. Try again.",
+                            text = "Could not analyze image",
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                             color = TextColor,
                             textAlign = TextAlign.Center
                         )
                         
-                        Text(
-                            text = if (isMockMode && errorText.contains("placeholder")) 
-                                "Mock API Key issue." 
-                            else 
-                                errorText,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MutedTextColor,
-                            textAlign = TextAlign.Center
-                        )
+                        // Monospace Diagnostics Log Box
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFFFEF2F2), RoundedCornerShape(12.dp))
+                                .border(1.dp, Color(0xFFFCA5A5), RoundedCornerShape(12.dp))
+                                .padding(12.dp)
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(
+                                    text = "API DIAGNOSTICS LOG",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFB91C1C),
+                                    letterSpacing = 1.sp
+                                )
+                                Text(
+                                    text = if (isMockMode && errorText.contains("placeholder")) 
+                                        "Mock API Key issue." 
+                                    else 
+                                        errorText,
+                                    fontSize = 11.sp,
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                    color = Color(0xFF7F1D1D),
+                                    modifier = Modifier
+                                        .heightIn(max = 100.dp)
+                                        .verticalScroll(rememberScrollState())
+                                )
+                            }
+                        }
 
                         Spacer(modifier = Modifier.height(8.dp))
 
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                // Retake Photo Button
+                                OutlinedButton(
+                                    onClick = {
+                                        errorMessage = null
+                                        currentCapturedBytes = null
+                                        isAnalyzing = false
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    border = BorderStroke(1.dp, BorderColor)
+                                ) {
+                                    Text("Retake Photo", color = TextColor)
+                                }
+                                
+                                // Resend Photo Button
+                                if (currentCapturedBytes != null) {
+                                    Button(
+                                        onClick = {
+                                            errorMessage = null
+                                            isAnalyzing = true
+                                            coroutineScope.launch {
+                                                try {
+                                                    val bytes = currentCapturedBytes!!
+                                                    val responseJson = if (isMockMode) {
+                                                        delay(2000)
+                                                        getMockJson()
+                                                    } else {
+                                                        val base64 = bytes.encodeBase64()
+                                                        val response = apiClient.analyzeMealImage(base64, plateSizeInches)
+                                                        Json.encodeToString(NutritionResponse.serializer(), response)
+                                                    }
+                                                    onResultObtained(responseJson)
+                                                } catch (e: Exception) {
+                                                    errorMessage = e.message ?: "Unknown API Error"
+                                                    isAnalyzing = false
+                                                }
+                                            }
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryAccent)
+                                    ) {
+                                        Text("Resend Photo", color = Color.White)
+                                    }
+                                }
+                            }
+                            
+                            // Cancel / Go Back Button
                             OutlinedButton(
                                 onClick = {
                                     errorMessage = null
+                                    currentCapturedBytes = null
+                                    isAnalyzing = false
                                     onNavigateBack()
                                 },
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier.fillMaxWidth(),
                                 border = BorderStroke(1.dp, BorderColor)
                             ) {
                                 Text("Cancel", color = TextColor)
-                            }
-                            
-                            Button(
-                                onClick = {
-                                    errorMessage = null
-                                    isAnalyzing = false
-                                },
-                                modifier = Modifier.weight(1f),
-                                colors = ButtonDefaults.buttonColors(containerColor = PrimaryAccent)
-                            ) {
-                                Text("Retry", color = Color.White)
                             }
                         }
                     }
