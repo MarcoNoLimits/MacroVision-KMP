@@ -22,7 +22,7 @@ class AiNutritionClient(
     override suspend fun analyzeMealImage(base64Image: String, plateSizeInches: Float?): NutritionResponse {
         val original = when (provider) {
             ApiProvider.OPEN_ROUTER -> openRouterClient.analyzeMealImage(base64Image, apiKey, model, plateSizeInches)
-            ApiProvider.GEMINI -> geminiClient.analyzeMealImage(base64Image, apiKey, model ?: "gemini-1.5-flash", plateSizeInches)
+            ApiProvider.GEMINI -> geminiClient.analyzeMealImage(base64Image, apiKey, model, plateSizeInches)
             ApiProvider.GROQ -> groqClient.analyzeMealImage(base64Image, apiKey, model ?: "llama-3.2-11b-vision-preview", plateSizeInches)
         }
         return groundNutritionResponse(original)
@@ -31,7 +31,7 @@ class AiNutritionClient(
     override suspend fun recalculateMealNutrition(items: List<Pair<String, Int>>): NutritionResponse {
         val original = when (provider) {
             ApiProvider.OPEN_ROUTER -> openRouterClient.recalculateMealNutrition(items, apiKey, model)
-            ApiProvider.GEMINI -> geminiClient.recalculateMealNutrition(items, apiKey, model ?: "gemini-1.5-flash")
+            ApiProvider.GEMINI -> geminiClient.recalculateMealNutrition(items, apiKey, model)
             ApiProvider.GROQ -> groqClient.recalculateMealNutrition(items, apiKey, model ?: "llama-3.2-11b-vision-preview")
         }
         return groundNutritionResponse(original)

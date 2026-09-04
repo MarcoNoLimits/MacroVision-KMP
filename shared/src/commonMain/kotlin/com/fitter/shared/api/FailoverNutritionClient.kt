@@ -15,16 +15,7 @@ class FailoverNutritionClient(
     override suspend fun analyzeMealImage(base64Image: String, plateSizeInches: Float?): NutritionResponse {
         val errors = mutableListOf<String>()
 
-        // 1. Try OpenRouter if configured
-        if (isOpenRouterConfigured()) {
-            try {
-                return openRouterClient.analyzeMealImage(base64Image, openRouterKey, plateSizeInches = plateSizeInches)
-            } catch (e: Exception) {
-                errors.add("OpenRouter error: ${e.message}")
-            }
-        }
-
-        // 2. Try Gemini if configured
+        // Tier 1 & 2: Try Gemini (Tier 1: 3.5 Flash Lite -> Tier 2: 3.1 Flash Lite = 1,000 RPD free) if configured
         if (isGeminiConfigured()) {
             try {
                 return geminiClient.analyzeMealImage(base64Image, geminiKey, plateSizeInches = plateSizeInches)
@@ -33,7 +24,16 @@ class FailoverNutritionClient(
             }
         }
 
-        // 3. Try Groq if configured
+        // Tier 3: Try OpenRouter (minimax/minimax-m3:free) if configured
+        if (isOpenRouterConfigured()) {
+            try {
+                return openRouterClient.analyzeMealImage(base64Image, openRouterKey, plateSizeInches = plateSizeInches)
+            } catch (e: Exception) {
+                errors.add("OpenRouter error: ${e.message}")
+            }
+        }
+
+        // Tier 4: Try Groq fallback if configured
         if (isGroqConfigured()) {
             try {
                 return groqClient.analyzeMealImage(base64Image, groqKey, plateSizeInches = plateSizeInches)
@@ -53,21 +53,21 @@ class FailoverNutritionClient(
     override suspend fun recalculateMealNutrition(items: List<Pair<String, Int>>): NutritionResponse {
         val errors = mutableListOf<String>()
 
-        // 1. Try OpenRouter if configured
-        if (isOpenRouterConfigured()) {
-            try {
-                return openRouterClient.recalculateMealNutrition(items, openRouterKey)
-            } catch (e: Exception) {
-                errors.add("OpenRouter error: ${e.message}")
-            }
-        }
-
-        // 2. Try Gemini if configured
+        // 1. Try Gemini (Primary: 3.5 Flash Lite -> Fallback: 3.1 Flash Lite = 1,000 RPD free) if configured
         if (isGeminiConfigured()) {
             try {
                 return geminiClient.recalculateMealNutrition(items, geminiKey)
             } catch (e: Exception) {
                 errors.add("Gemini error: ${e.message}")
+            }
+        }
+
+        // 2. Try OpenRouter if configured
+        if (isOpenRouterConfigured()) {
+            try {
+                return openRouterClient.recalculateMealNutrition(items, openRouterKey)
+            } catch (e: Exception) {
+                errors.add("OpenRouter error: ${e.message}")
             }
         }
 

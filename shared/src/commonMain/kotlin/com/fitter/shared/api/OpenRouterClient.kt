@@ -52,15 +52,17 @@ internal data class ResponseMessage(
 
 class OpenRouterClient(
     var apiKey: String = "",
-    var model: String = "openrouter/free"
+    var model: String = "minimax/minimax-m3:free"
 ) : NutritionClient {
+    private val json = Json {
+        ignoreUnknownKeys = true
+        coerceInputValues = true
+        prettyPrint = true
+    }
+
     private val client = HttpClient {
         install(ContentNegotiation) {
-            json(Json {
-                ignoreUnknownKeys = true
-                coerceInputValues = true
-                prettyPrint = true
-            })
+            json(json)
         }
     }
 
@@ -123,6 +125,8 @@ class OpenRouterClient(
 
         val httpResponse = client.post("https://openrouter.ai/api/v1/chat/completions") {
             header(HttpHeaders.Authorization, "Bearer $apiKey")
+            header("HTTP-Referer", "https://github.com/MarcoNoLimits/MacroVision-KMP")
+            header("X-Title", "MacroVision")
             contentType(ContentType.Application.Json)
             setBody(request)
         }
@@ -137,7 +141,7 @@ class OpenRouterClient(
         
         val cleanedJson = cleanJson(rawContent)
         
-        return Json { ignoreUnknownKeys = true }.decodeFromString<NutritionResponse>(cleanedJson)
+        return json.decodeFromString<NutritionResponse>(cleanedJson)
     }
 
     override suspend fun recalculateMealNutrition(items: List<Pair<String, Int>>): NutritionResponse {
@@ -188,6 +192,8 @@ class OpenRouterClient(
 
         val httpResponse = client.post("https://openrouter.ai/api/v1/chat/completions") {
             header(HttpHeaders.Authorization, "Bearer $apiKey")
+            header("HTTP-Referer", "https://github.com/MarcoNoLimits/MacroVision-KMP")
+            header("X-Title", "MacroVision")
             contentType(ContentType.Application.Json)
             setBody(request)
         }
@@ -202,6 +208,6 @@ class OpenRouterClient(
         
         val cleanedJson = cleanJson(rawContent)
         
-        return Json { ignoreUnknownKeys = true }.decodeFromString<NutritionResponse>(cleanedJson)
+        return json.decodeFromString<NutritionResponse>(cleanedJson)
     }
 }
