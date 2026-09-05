@@ -128,3 +128,9 @@ actual fun compressImage(imageBytes: ByteArray): ByteArray {
         return imageBytes
     }
 }
+
+private val androidAdManager by lazy {
+    com.fitter.app.ads.AndroidAdManager { appContext }
+}
+
+actual fun getPlatformAdManager(): com.fitter.app.ads.AdManager = androidAdManager

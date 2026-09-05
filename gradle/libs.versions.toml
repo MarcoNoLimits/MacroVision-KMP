@@ -14,8 +14,10 @@ kotlin = "2.3.21"
 ktor = "3.4.3"
 material3 = "1.11.0-alpha07"
 camerax = "1.4.1"
+playServicesAds = "23.6.0"
 
 [libraries]
+play-services-ads = { module = "com.google.android.gms:play-services-ads", version.ref = "playServicesAds" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activity" }
 androidx-lifecycle-runtimeCompose = { group = "org.jetbrains.androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "androidx-lifecycle" }
 camerax-core = { group = "androidx.camera", name = "camera-core", version.ref = "camerax" }

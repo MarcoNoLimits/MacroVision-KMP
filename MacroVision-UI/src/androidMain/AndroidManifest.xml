@@ -22,6 +22,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Google Mobile Ads (AdMob) Sample Application ID for development & testing -->
+        <!-- Replace this with your actual AdMob App ID from the AdMob console before production release -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-3940256099942544~3347511713"/>
         
     </application>
 

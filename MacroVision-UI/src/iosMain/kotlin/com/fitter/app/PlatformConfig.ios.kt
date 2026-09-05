@@ -24,6 +24,7 @@ object PlatformConfig {
     var openRouterApiKey: String = ""
     var geminiApiKey: String = ""
     var groqApiKey: String = ""
+    val adManager = com.fitter.app.ads.IosAdManager()
 }
 
 actual val openRouterApiKey: String get() = PlatformConfig.openRouterApiKey
@@ -136,3 +137,5 @@ actual fun compressImage(imageBytes: ByteArray): ByteArray {
         return imageBytes
     }
 }
+
+actual fun getPlatformAdManager(): com.fitter.app.ads.AdManager = PlatformConfig.adManager

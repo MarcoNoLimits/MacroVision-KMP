@@ -14,3 +14,4 @@ expect fun getLastSevenDays(): List<Pair<String, String>>
 
 expect fun compressImage(imageBytes: ByteArray): ByteArray
 
+expect fun getPlatformAdManager(): com.fitter.app.ads.AdManager

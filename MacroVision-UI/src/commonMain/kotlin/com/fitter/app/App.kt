@@ -55,6 +55,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import com.fitter.app.ads.AdBanner
+import com.fitter.app.ads.AdManager
+import com.fitter.app.ads.ScanQuotaManager
 
 // Type-safe Navigation Destinations
 @Serializable
@@ -211,6 +214,21 @@ fun App() {
                 .background(BgColor)
         ) {
             val navController = rememberNavController()
+            val adManager = remember { getPlatformAdManager() }
+
+            LaunchedEffect(Unit) {
+                adManager.preloadAds()
+            }
+
+            var playAdDuringScan by remember {
+                mutableStateOf(loadPreference("play_ad_during_scan", "true").toBoolean())
+            }
+
+            var scansRemainingToday by remember(selectedDateKey) {
+                mutableStateOf(ScanQuotaManager.getRemainingScans(selectedDateKey))
+            }
+
+            var showQuotaLimitDialog by remember { mutableStateOf(false) }
             
             // Check API key configuration for OpenRouter, Gemini, and Groq.
             val openRouterKey = openRouterApiKey
@@ -234,6 +252,7 @@ fun App() {
                         profile = userProfile.value,
                         selectedDate = selectedDateKey,
                         waterLogged = waterLoggedToday,
+                        scansRemaining = scansRemainingToday,
                         onDateSelected = { newDate ->
                             selectedDateKey = newDate
                         },
@@ -242,7 +261,11 @@ fun App() {
                             savePreference("water_intake_$selectedDateKey", newWater.toString())
                         },
                         onScanClicked = {
-                            navController.navigate(CameraDestination)
+                            if (ScanQuotaManager.hasQuota(selectedDateKey)) {
+                                navController.navigate(CameraDestination)
+                            } else {
+                                showQuotaLimitDialog = true
+                            }
                         },
                         onSettingsClicked = {
                             navController.navigate(SettingsDestination)
@@ -259,6 +282,12 @@ fun App() {
                         apiClient = apiClient,
                         isMockMode = isMockMode,
                         plateSizeInches = userProfile.value.defaultPlateSize,
+                        adManager = adManager,
+                        playAdDuringScan = playAdDuringScan,
+                        onScanConsumed = {
+                            ScanQuotaManager.consumeScan(selectedDateKey)
+                            scansRemainingToday = ScanQuotaManager.getRemainingScans(selectedDateKey)
+                        },
                         onPhotoCaptured = { bytes ->
                             lastCapturedImageBytes = bytes
                         },
@@ -309,6 +338,17 @@ fun App() {
                 composable<SettingsDestination> {
                     SettingsScreen(
                         profile = userProfile.value,
+                        adManager = adManager,
+                        playAdDuringScan = playAdDuringScan,
+                        scansRemainingToday = scansRemainingToday,
+                        currentDateKey = selectedDateKey,
+                        onTogglePlayAd = { enabled ->
+                            playAdDuringScan = enabled
+                            savePreference("play_ad_during_scan", enabled.toString())
+                        },
+                        onScansUpdated = {
+                            scansRemainingToday = ScanQuotaManager.getRemainingScans(selectedDateKey)
+                        },
                         onSave = { updated ->
                             saveProfile(updated)
                             navController.popBackStack()
@@ -317,6 +357,85 @@ fun App() {
                             navController.popBackStack()
                         }
                     )
+                }
+            }
+
+            // Quota Limit Reached Dialog
+            if (showQuotaLimitDialog) {
+                Dialog(onDismissRequest = { showQuotaLimitDialog = false }) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        shape = RoundedCornerShape(24.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, BorderColor, RoundedCornerShape(24.dp))
+                            .shadow(8.dp, RoundedCornerShape(24.dp))
+                            .padding(4.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .background(PrimaryAccent.copy(alpha = 0.1f), CircleShape)
+                            ) {
+                                Text(text = "⚡", fontSize = 28.sp)
+                            }
+
+                            Text(
+                                text = "Daily Scan Limit Reached",
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextColor,
+                                textAlign = TextAlign.Center
+                            )
+
+                            Text(
+                                text = "You have used your ${ScanQuotaManager.getDailyFreeLimit()} daily free AI meal scans.\n\nWatch a short video ad to unlock +2 scans immediately, or come back tomorrow!",
+                                fontSize = 13.sp,
+                                color = MutedTextColor,
+                                textAlign = TextAlign.Center
+                            )
+
+                            Button(
+                                onClick = {
+                                    adManager.showRewardedScanUnlockAd(
+                                        onRewarded = {
+                                            ScanQuotaManager.addBonusScans(selectedDateKey, 2)
+                                            scansRemainingToday = ScanQuotaManager.getRemainingScans(selectedDateKey)
+                                            showQuotaLimitDialog = false
+                                            navController.navigate(CameraDestination)
+                                        },
+                                        onDismissed = {
+                                            scansRemainingToday = ScanQuotaManager.getRemainingScans(selectedDateKey)
+                                        }
+                                    )
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = PrimaryAccent),
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(50.dp)
+                            ) {
+                                Text(
+                                    text = "Watch Video (+2 Scans)",
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
+
+                            TextButton(
+                                onClick = { showQuotaLimitDialog = false },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Maybe Later", color = MutedTextColor)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -332,6 +451,7 @@ fun DashboardScreen(
     profile: UserProfile,
     selectedDate: String,
     waterLogged: Int,
+    scansRemaining: Int,
     onDateSelected: (String) -> Unit,
     onWaterChanged: (Int) -> Unit,
     onScanClicked: () -> Unit,
@@ -631,7 +751,7 @@ fun DashboardScreen(
                         .padding(horizontal = 12.dp, vertical = 4.dp)
                 ) {
                     Text(
-                        text = "MacroVision Active",
+                        text = "MacroVision Active • $scansRemaining left",
                         color = Color.White,
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
@@ -764,6 +884,9 @@ fun DashboardScreen(
                 }
             }
         }
+
+        // AdMob Banner Placement on Dashboard
+        AdBanner(modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 12.dp))
     }
 }
 
@@ -1022,6 +1145,9 @@ fun CameraScreen(
     apiClient: NutritionClient,
     isMockMode: Boolean,
     plateSizeInches: Float?,
+    adManager: AdManager,
+    playAdDuringScan: Boolean,
+    onScanConsumed: () -> Unit,
     onPhotoCaptured: (ByteArray) -> Unit,
     onResultObtained: (String) -> Unit,
     onNavigateBack: () -> Unit
@@ -1042,21 +1168,64 @@ fun CameraScreen(
                     onPhotoCaptured(compressedBytes)
                     isAnalyzing = true
                     errorMessage = null
-                    coroutineScope.launch {
-                        try {
-                            val responseJson = if (isMockMode) {
-                                // Simulate API delay
-                                delay(2000)
-                                getMockJson()
-                            } else {
-                                val base64 = compressedBytes.encodeBase64()
-                                val response = apiClient.analyzeMealImage(base64, plateSizeInches)
-                                Json.encodeToString(NutritionResponse.serializer(), response)
+                    onScanConsumed()
+
+                    if (playAdDuringScan) {
+                        var apiResultJson: String? = null
+                        var isAdFinished = false
+                        var apiError: String? = null
+
+                        // 1. Kick off AI analysis in background
+                        coroutineScope.launch {
+                            try {
+                                val responseJson = if (isMockMode) {
+                                    delay(2000)
+                                    getMockJson()
+                                } else {
+                                    val base64 = compressedBytes.encodeBase64()
+                                    val response = apiClient.analyzeMealImage(base64, plateSizeInches)
+                                    Json.encodeToString(NutritionResponse.serializer(), response)
+                                }
+                                apiResultJson = responseJson
+                                if (isAdFinished) {
+                                    onResultObtained(responseJson)
+                                }
+                            } catch (e: Exception) {
+                                apiError = e.message ?: "Unknown API Error"
+                                if (isAdFinished) {
+                                    errorMessage = apiError
+                                    isAnalyzing = false
+                                }
                             }
-                            onResultObtained(responseJson)
-                        } catch (e: Exception) {
-                            errorMessage = e.message ?: "Unknown API Error"
-                            isAnalyzing = false
+                        }
+
+                        // 2. Play Ad while scan is processing
+                        adManager.showScanProcessingAd {
+                            isAdFinished = true
+                            if (apiResultJson != null) {
+                                onResultObtained(apiResultJson)
+                            } else if (apiError != null) {
+                                errorMessage = apiError
+                                isAnalyzing = false
+                            }
+                        }
+                    } else {
+                        coroutineScope.launch {
+                            try {
+                                val responseJson = if (isMockMode) {
+                                    // Simulate API delay
+                                    delay(2000)
+                                    getMockJson()
+                                } else {
+                                    val base64 = compressedBytes.encodeBase64()
+                                    val response = apiClient.analyzeMealImage(base64, plateSizeInches)
+                                    Json.encodeToString(NutritionResponse.serializer(), response)
+                                }
+                                onResultObtained(responseJson)
+                            } catch (e: Exception) {
+                                errorMessage = e.message ?: "Unknown API Error"
+                                isAnalyzing = false
+                            }
                         }
                     }
                 },
@@ -1697,6 +1866,9 @@ fun ResultScreen(
                             color = MutedTextColor
                         )
                     }
+
+                    // AdMob Banner Placement
+                    AdBanner(modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
                 }
             }
         }
@@ -2133,6 +2305,12 @@ fun ResultScreen(
 @Composable
 fun SettingsScreen(
     profile: UserProfile,
+    adManager: AdManager,
+    playAdDuringScan: Boolean,
+    scansRemainingToday: Int,
+    currentDateKey: String,
+    onTogglePlayAd: (Boolean) -> Unit,
+    onScansUpdated: () -> Unit,
     onSave: (UserProfile) -> Unit,
     onBack: () -> Unit
 ) {
@@ -2463,6 +2641,115 @@ fun SettingsScreen(
                         modifier = Modifier.weight(1f)
                     )
                 }
+            }
+        }
+
+        // Section 4: Monetization & Ad Settings
+        Card(
+            colors = CardDefaults.cardColors(containerColor = CardBackground),
+            shape = RoundedCornerShape(24.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .shadow(2.dp, RoundedCornerShape(24.dp))
+                .border(1.dp, BorderColor, RoundedCornerShape(24.dp))
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = "AD MONETIZATION & DAILY QUOTA",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MutedTextColor,
+                    letterSpacing = 1.sp
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Play Ad During Meal Scan",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextColor
+                        )
+                        Text(
+                            text = "Plays an ad while food photo is analyzed in background",
+                            fontSize = 12.sp,
+                            color = MutedTextColor
+                        )
+                    }
+                    Switch(
+                        checked = playAdDuringScan,
+                        onCheckedChange = { onTogglePlayAd(it) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = PrimaryAccent
+                        )
+                    )
+                }
+
+                HorizontalDivider(color = BorderColor)
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "Daily AI Scans Available",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextColor
+                        )
+                        Text(
+                            text = "Free daily allowance: ${ScanQuotaManager.getDailyFreeLimit()} scans",
+                            fontSize = 12.sp,
+                            color = MutedTextColor
+                        )
+                    }
+                    Text(
+                        text = "$scansRemainingToday scans",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = PrimaryAccent
+                    )
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        adManager.showRewardedScanUnlockAd(
+                            onRewarded = {
+                                ScanQuotaManager.addBonusScans(currentDateKey, 2)
+                                onScansUpdated()
+                            },
+                            onDismissed = {
+                                onScansUpdated()
+                            }
+                        )
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, PrimaryAccent),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Watch Rewarded Ad (+2 Scans)",
+                        color = PrimaryAccent,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Text(
+                    text = "Provider: Google AdMob (Official Test Units)",
+                    fontSize = 10.sp,
+                    color = MutedTextColor,
+                    fontWeight = FontWeight.Medium
+                )
             }
         }
 

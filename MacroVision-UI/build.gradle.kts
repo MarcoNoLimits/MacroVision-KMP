@@ -46,6 +46,10 @@ kotlin {
             implementation(libs.ktor.serialization.kotlinx.json)
         }
         
+        commonTest.dependencies {
+            implementation(kotlin("test"))
+        }
+        
         androidMain.dependencies {
             implementation(libs.compose.uiTooling)
             implementation(libs.compose.uiToolingPreview)
@@ -57,6 +61,12 @@ kotlin {
             implementation(libs.camerax.camera2)
             implementation(libs.camerax.lifecycle)
             implementation(libs.camerax.view)
+            
+            // Google Mobile Ads (AdMob)
+            implementation(libs.play.services.ads)
+            
+            // Guava for CameraX ListenableFuture resolution with Play Services
+            implementation("com.google.guava:guava:33.3.1-android")
         }
         
         iosMain.dependencies {
@@ -114,6 +124,10 @@ configure<com.android.build.api.dsl.ApplicationExtension> {
     buildTypes {
         getByName("release") {
             isMinifyEnabled = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
     
