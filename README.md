@@ -1,6 +1,6 @@
-# 📸 MacroVision — AI Food Nutrition Tracker
+# 📸 Fitter — AI Food Nutrition Tracker
 
-MacroVision is a modern, cross-platform **Kotlin Multiplatform (KMP)** application designed to simplify meal tracking. Capture a photo of your food, and MacroVision will automatically estimate its ingredients, weights, and macronutrient profile using a robust, multi-provider Vision-Language Model (VLM) failover sequence.
+Fitter is a modern, cross-platform **Kotlin Multiplatform (KMP)** application designed to simplify meal tracking. Capture a photo of your food, and Fitter will automatically estimate its ingredients, weights, and macronutrient profile using a robust, multi-provider Vision-Language Model (VLM) failover sequence.
 
 ---
 

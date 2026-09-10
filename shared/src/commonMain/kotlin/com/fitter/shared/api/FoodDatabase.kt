@@ -126,21 +126,38 @@ object FoodDatabase {
         FoodDbEntry("Cane Sugar", listOf("sugar", "white sugar", "brown sugar", "granulated sugar"), 387.0, 0.0f, 100.0f, 0.0f)
     )
 
+    private val exactIndex: Map<String, FoodDbEntry> by lazy {
+        val map = mutableMapOf<String, FoodDbEntry>()
+        for (entry in foods) {
+            map[entry.name.lowercase().trim()] = entry
+            for (synonym in entry.synonyms) {
+                map[synonym.lowercase().trim()] = entry
+            }
+        }
+        map
+    }
+
+    /**
+     * Instant prefix/substring search for UI auto-complete and search-to-swap overlay
+     */
+    fun searchFoods(query: String, limit: Int = 10): List<FoodDbEntry> {
+        val normalized = query.lowercase().trim()
+        if (normalized.isEmpty()) return emptyList()
+        return foods.asSequence()
+            .filter { entry ->
+                entry.name.lowercase().contains(normalized) ||
+                entry.synonyms.any { it.lowercase().contains(normalized) }
+            }
+            .take(limit)
+            .toList()
+    }
+
     fun findClosestFood(query: String): FoodDbEntry? {
         val cleanQuery = query.trim().lowercase()
         if (cleanQuery.isEmpty()) return null
 
-        // 1. Exact matches first (case-insensitive) on name or any synonym
-        for (entry in foods) {
-            if (entry.name.lowercase() == cleanQuery) {
-                return entry
-            }
-            for (synonym in entry.synonyms) {
-                if (synonym.lowercase() == cleanQuery) {
-                    return entry
-                }
-            }
-        }
+        // 1. Instant O(1) exact match lookup on name or any synonym
+        exactIndex[cleanQuery]?.let { return it }
 
         // 2. Substring matches
         var bestEntry: FoodDbEntry? = null

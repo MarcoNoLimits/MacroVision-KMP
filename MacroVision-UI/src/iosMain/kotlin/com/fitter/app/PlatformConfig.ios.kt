@@ -53,6 +53,8 @@ actual fun getCurrentDateString(): String {
     return formatter.stringFromDate(NSDate())
 }
 
+actual fun getCurrentEpochMillis(): Long = (NSDate().timeIntervalSince1970 * 1000).toLong()
+
 actual fun getLastSevenDays(): List<Pair<String, String>> {
     val list = mutableListOf<Pair<String, String>>()
     val calendar = NSCalendar.currentCalendar

@@ -3,6 +3,7 @@ package com.fitter.shared.api
 import com.fitter.shared.model.NutritionResponse
 import io.ktor.client.*
 import io.ktor.client.call.*
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
 import io.ktor.http.*
@@ -63,6 +64,11 @@ class OpenRouterClient(
     private val client = HttpClient {
         install(ContentNegotiation) {
             json(json)
+        }
+        install(HttpTimeout) {
+            requestTimeoutMillis = 15_000L
+            connectTimeoutMillis = 5_000L
+            socketTimeoutMillis = 15_000L
         }
     }
 
@@ -125,8 +131,8 @@ class OpenRouterClient(
 
         val httpResponse = client.post("https://openrouter.ai/api/v1/chat/completions") {
             header(HttpHeaders.Authorization, "Bearer $apiKey")
-            header("HTTP-Referer", "https://github.com/MarcoNoLimits/MacroVision-KMP")
-            header("X-Title", "MacroVision")
+            header("HTTP-Referer", "https://github.com/MarcoNoLimits/Fitter")
+            header("X-Title", "Fitter")
             contentType(ContentType.Application.Json)
             setBody(request)
         }

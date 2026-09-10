@@ -1,4 +1,4 @@
-# Brand Spec — MacroVision MVP
+# Brand Spec — Fitter MVP
 
 ## Visual Posture: Strict Utility
 - **Philosophy**: Efficiency over elegance. High information density, bold typographic hierarchy, and sharp functional contrast.

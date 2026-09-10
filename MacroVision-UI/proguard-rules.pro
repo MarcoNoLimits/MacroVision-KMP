@@ -13,14 +13,18 @@
 }
 
 # Kotlinx Serialization
--keepattributes *Annotation*,InnerClasses
+-keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
 -dontnote kotlinx.serialization.SerializationKt
 -keepclassmembers class * {
     *** Companion;
 }
+-keepclassmembers class * {
+    @kotlinx.serialization.Serializable <fields>;
+}
 -keepclasseswithmembers class * {
     kotlinx.serialization.KSerializer serializer(...);
 }
+-keep,allowaccessmodification class com.fitter.** { *; }
 
 # Ktor & Coroutines
 -keepclassmembers class kotlinx.coroutines.** { *; }

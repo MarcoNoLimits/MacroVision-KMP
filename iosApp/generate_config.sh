@@ -8,7 +8,7 @@ CONFIG_FILE="Configuration/Config.xcconfig"
 echo "// Generated dynamically from root .env file" > "$CONFIG_FILE"
 echo "TEAM_ID=" >> "$CONFIG_FILE"
 echo "BUNDLE_ID=com.fitter.app" >> "$CONFIG_FILE"
-echo "APP_NAME=MacroVision" >> "$CONFIG_FILE"
+echo "APP_NAME=Fitter" >> "$CONFIG_FILE"
 
 if [ -f "$ENV_FILE" ]; then
     echo "Found .env file at $ENV_FILE. Updating Config.xcconfig..."

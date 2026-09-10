@@ -1,4 +1,4 @@
-# AGENTS.md — Fitter (MacroVision AI Food Scanner)
+# AGENTS.md — Fitter (AI Food Nutrition Scanner)
 
 This file is the authoritative instruction set for any agent (AI or human) working in this repository. Read it fully before making changes.
 
@@ -6,7 +6,7 @@ This file is the authoritative instruction set for any agent (AI or human) worki
 
 ## 1. Project Overview
 
-**Fitter (codename: MacroVision)** is a Kotlin Multiplatform (KMP) app that scans meal photos with a Vision-Language Model (VLM) and estimates ingredients, weights, and macronutrients with an interactive correction workflow.
+**Fitter** is a Kotlin Multiplatform (KMP) app that scans meal photos with a Vision-Language Model (VLM) and estimates ingredients, weights, and macronutrients with an interactive correction workflow.
 
 - **Modules**: `:shared` (HTTP clients, models, VLM logic), `:MacroVision-UI` (Compose Multiplatform UI + ads + quotas), `iosApp/` (native iOS wrapper).
 - **VLM Pipeline**: OpenRouter (Qwen2.5-VL) → Google Gemini → Groq failover.
@@ -32,13 +32,13 @@ This file is the authoritative instruction set for any agent (AI or human) worki
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 1 | Onboarding scan policy (Week 1 vs Week 2+) | **PENDING** | See Section 5.1 |
-| 2 | Forced interstitial on scan #4+ | **PENDING** | See Section 5.2 — replaces rewarded prompt |
-| 3 | Re-integrate AdMob test units → live AppLovin MAX + AdMob bidding | **PENDING** | See Section 5.3 |
-| 4 | App Open Ads with grace period + cooldown | **PENDING** | See Section 5.4 |
-| 5 | Adaptive banners on secondary tabs only | **PENDING** | See Section 5.5 |
-| 6 | Brand-safety ad filtering | **PENDING** | See Section 5.6 |
-| 7 | Keep `ScanQuotaManagerTest` green (5 tests) | **IN PROGRESS** | Baseline: 5/5 passing |
+| 1 | Onboarding scan policy (Week 1 vs Week 2+) | **DONE** | Implemented 5 vs 3 in `ScanQuotaManager` |
+| 2 | Forced interstitial on scan #4+ | **DONE** | Scan never blocked; routes to `showScanProcessingAd` |
+| 3 | Re-integrate AdMob test units → live AppLovin MAX + AdMob bidding | **DONE** | Configured in `AdConfig` with MAX SDK & placement keys |
+| 4 | App Open Ads with grace period + cooldown | **DONE** | `AppOpenAdManager` (session > 3, 4h cooldown) |
+| 5 | Adaptive banners on secondary tabs only | **DONE** | Isolated to Dashboard & Settings; zero ads on Camera/Review |
+| 6 | Brand-safety ad filtering | **DONE** | Codified blocked/allowed categories in `AdConfig` |
+| 7 | Keep `ScanQuotaManagerTest` green (expanded to 9 tests) | **DONE** | 9/9 passing |
 
 ## 5. THE MONETIZATION TASK (Canonical Specification)
 
@@ -96,10 +96,10 @@ When the user has exhausted their free daily quota and attempts another scan:
 
 ### 5.7 Definition of Done
 
-- [ ] All 5 `ScanQuotaManagerTest` tests pass, plus new tests for: Week-1 limit (5), Week-2 limit (3), forced-interstitial trigger on scan #4+ (no dialog).
-- [ ] `App.kt` gate logic routes: quota available → process; quota exhausted → `showScanProcessingAd { process }`.
-- [ ] No ad units on Camera/Scan composable.
-- [ ] App Open ad respects `sessionCount > 3` + 4h cooldown.
+- [x] All 5 `ScanQuotaManagerTest` tests pass, plus new tests for: Week-1 limit (5), Week-2 limit (3), forced-interstitial trigger on scan #4+ (no dialog).
+- [x] `App.kt` gate logic routes: quota available → process; quota exhausted → `showScanProcessingAd { process }`.
+- [x] No ad units on Camera/Scan composable.
+- [x] App Open ad respects `sessionCount > 3` + 4h cooldown.
 - [ ] Merge via PR with the monetization spec referenced in the description.
 
 ---

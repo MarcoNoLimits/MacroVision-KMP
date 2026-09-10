@@ -19,13 +19,17 @@ actual val groqApiKey: String get() = BuildConfig.GROQ_API_KEY
 lateinit var appContext: Context
 
 actual fun savePreference(key: String, value: String) {
-    val sharedPref = appContext.getSharedPreferences("macrovision_prefs", Context.MODE_PRIVATE)
+    val sharedPref = appContext.getSharedPreferences("fitter_prefs", Context.MODE_PRIVATE)
     sharedPref.edit().putString(key, value).apply()
 }
 
 actual fun loadPreference(key: String, defaultValue: String): String {
-    val sharedPref = appContext.getSharedPreferences("macrovision_prefs", Context.MODE_PRIVATE)
-    return sharedPref.getString(key, defaultValue) ?: defaultValue
+    val sharedPref = appContext.getSharedPreferences("fitter_prefs", Context.MODE_PRIVATE)
+    if (sharedPref.contains(key)) {
+        return sharedPref.getString(key, defaultValue) ?: defaultValue
+    }
+    val legacyPref = appContext.getSharedPreferences("macrovision_prefs", Context.MODE_PRIVATE)
+    return legacyPref.getString(key, defaultValue) ?: defaultValue
 }
 
 actual fun getCurrentTimeString(): String {
@@ -37,6 +41,8 @@ actual fun getCurrentDateString(): String {
     val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
     return sdf.format(Date())
 }
+
+actual fun getCurrentEpochMillis(): Long = System.currentTimeMillis()
 
 actual fun getLastSevenDays(): List<Pair<String, String>> {
     val list = mutableListOf<Pair<String, String>>()

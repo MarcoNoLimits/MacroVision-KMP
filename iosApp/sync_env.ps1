@@ -8,7 +8,7 @@ $lines = @(
     "// Generated dynamically from root .env file",
     "TEAM_ID=",
     "BUNDLE_ID=com.fitter.app",
-    "APP_NAME=MacroVision"
+    "APP_NAME=Fitter"
 )
 
 if (Test-Path $envFile) {

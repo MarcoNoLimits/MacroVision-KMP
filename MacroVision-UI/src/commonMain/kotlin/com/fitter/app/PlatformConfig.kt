@@ -10,6 +10,7 @@ expect fun loadPreference(key: String, defaultValue: String): String
 expect fun getCurrentTimeString(): String
 
 expect fun getCurrentDateString(): String
+expect fun getCurrentEpochMillis(): Long
 expect fun getLastSevenDays(): List<Pair<String, String>>
 
 expect fun compressImage(imageBytes: ByteArray): ByteArray
