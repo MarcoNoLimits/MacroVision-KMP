@@ -65,6 +65,10 @@ kotlin {
             // Google Mobile Ads (AdMob)
             implementation(libs.play.services.ads)
             
+            // AppLovin MAX SDK & Google Bidding Adapter (Task 3: Unified In-App Bidding)
+            implementation("com.applovin:applovin-sdk:13.6.4")
+            implementation("com.applovin.mediation:google-adapter:23.6.0.0")
+            
             // Guava for CameraX ListenableFuture resolution with Play Services
             implementation("com.google.guava:guava:33.3.1-android")
         }

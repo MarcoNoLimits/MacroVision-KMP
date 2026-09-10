@@ -26,6 +26,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fitter.app.ads.AdBanner
+import com.fitter.app.ads.AdConfig
 import com.fitter.app.ads.AdManager
 import com.fitter.app.ads.ScanQuotaManager
 import com.fitter.app.ui.components.calculateBmr
@@ -475,11 +476,26 @@ fun SettingsScreen(
                 }
 
                 Text(
-                    text = "Provider: Google AdMob (Official Test Units)",
+                    text = if (AdConfig.isProductionMediationEnabled) "Provider: AppLovin MAX Unified Bidding (Google + Meta + Unity)" else "Provider: Google AdMob (Official Test Units)",
                     fontSize = 10.sp,
                     color = MutedTextColor,
                     fontWeight = FontWeight.Medium
                 )
+
+                if (AdConfig.isProductionMediationEnabled) {
+                    OutlinedButton(
+                        onClick = { adManager.showMediationDebugger() },
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                    ) {
+                        Text(
+                            text = "Launch MAX Mediation Debugger",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = TextColor
+                        )
+                    }
+                }
             }
         }
 

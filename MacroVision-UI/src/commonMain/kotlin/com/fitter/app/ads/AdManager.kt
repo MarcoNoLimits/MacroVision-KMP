@@ -90,6 +90,9 @@ interface AdManager {
 
     /** Preloads ads in the background. */
     fun preloadAds()
+
+    /** Opens AppLovin MAX Mediation Debugger for on-device testing and certification. */
+    fun showMediationDebugger() {}
 }
 
 /**

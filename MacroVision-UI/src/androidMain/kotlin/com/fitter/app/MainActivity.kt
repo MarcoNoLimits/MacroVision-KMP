@@ -4,6 +4,10 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import com.applovin.sdk.AppLovinMediationProvider
+import com.applovin.sdk.AppLovinSdk
+import com.applovin.sdk.AppLovinSdkInitializationConfiguration
+import com.fitter.app.ads.AdConfig
 import com.fitter.app.ads.AndroidAdManager
 import com.google.android.gms.ads.MobileAds
 import java.lang.ref.WeakReference
@@ -15,9 +19,19 @@ class MainActivity : ComponentActivity() {
         appContext = applicationContext
         AndroidAdManager.currentActivityRef = WeakReference(this)
 
-        // Initialize Google Mobile Ads SDK on a background thread
-        MobileAds.initialize(this) {
-            getPlatformAdManager().preloadAds()
+        if (AdConfig.isProductionMediationEnabled && AdConfig.maxSdkKey.isNotBlank()) {
+            val initConfig = AppLovinSdkInitializationConfiguration.builder(AdConfig.maxSdkKey, this)
+                .setMediationProvider(AppLovinMediationProvider.MAX)
+                .build()
+
+            AppLovinSdk.getInstance(this).initialize(initConfig) {
+                getPlatformAdManager().preloadAds()
+            }
+        } else {
+            // Initialize Google Mobile Ads SDK on a background thread
+            MobileAds.initialize(this) {
+                getPlatformAdManager().preloadAds()
+            }
         }
 
         setContent {

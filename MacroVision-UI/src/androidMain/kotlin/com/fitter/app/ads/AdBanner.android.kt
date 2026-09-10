@@ -13,6 +13,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.applovin.mediation.ads.MaxAdView
 import com.google.android.gms.ads.AdRequest
 import com.google.android.gms.ads.AdSize
 import com.google.android.gms.ads.AdView
@@ -25,20 +26,36 @@ actual fun AdBanner(modifier: Modifier) {
             .padding(vertical = 8.dp),
         contentAlignment = Alignment.Center
     ) {
-        AndroidView(
-            modifier = Modifier
-                .clip(RoundedCornerShape(8.dp))
-                .background(Color.Transparent),
-            factory = { context ->
-                AdView(context).apply {
-                    setAdSize(AdSize.BANNER)
-                    adUnitId = AdConfig.ANDROID_TEST_BANNER
-                    loadAd(AdRequest.Builder().build())
+        if (AdConfig.isProductionMediationEnabled && AdConfig.maxAndroidBannerId.isNotBlank()) {
+            AndroidView(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color.Transparent),
+                factory = { context ->
+                    MaxAdView(AdConfig.maxAndroidBannerId, context).apply {
+                        loadAd()
+                    }
+                },
+                onRelease = { maxAdView ->
+                    maxAdView.destroy()
                 }
-            },
-            onRelease = { adView ->
-                adView.destroy()
-            }
-        )
+            )
+        } else {
+            AndroidView(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color.Transparent),
+                factory = { context ->
+                    AdView(context).apply {
+                        setAdSize(AdSize.BANNER)
+                        adUnitId = AdConfig.ANDROID_TEST_BANNER
+                        loadAd(AdRequest.Builder().build())
+                    }
+                },
+                onRelease = { adView ->
+                    adView.destroy()
+                }
+            )
+        }
     }
 }
