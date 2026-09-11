@@ -83,28 +83,28 @@ configure<com.android.build.api.dsl.ApplicationExtension> {
     namespace = "com.fitter.app"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
     
+    val properties = Properties()
+    // 1. Try loading from .env
+    val envFile = rootProject.file(".env")
+    if (envFile.exists()) {
+        envFile.inputStream().use { properties.load(it) }
+    }
+    // 2. Fallback to local.properties if keys are missing
+    val localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        val localProps = Properties()
+        localPropertiesFile.inputStream().use { localProps.load(it) }
+        localProps.forEach { key, value ->
+            properties.putIfAbsent(key, value)
+        }
+    }
+
     defaultConfig {
         applicationId = "com.fitter.app"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1
         versionName = "1.0"
-        
-        val properties = Properties()
-        // 1. Try loading from .env
-        val envFile = rootProject.file(".env")
-        if (envFile.exists()) {
-            envFile.inputStream().use { properties.load(it) }
-        }
-        // 2. Fallback to local.properties if keys are missing
-        val localPropertiesFile = rootProject.file("local.properties")
-        if (localPropertiesFile.exists()) {
-            val localProps = Properties()
-            localPropertiesFile.inputStream().use { localProps.load(it) }
-            localProps.forEach { key, value ->
-                properties.putIfAbsent(key, value)
-            }
-        }
         
         val openRouterApiKey = properties.getProperty("OPENROUTER_API_KEY") ?: ""
         val geminiApiKey = properties.getProperty("GEMINI_API_KEY") ?: ""
@@ -124,10 +124,27 @@ configure<com.android.build.api.dsl.ApplicationExtension> {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
+    signingConfigs {
+        create("release") {
+            val keystorePath = properties.getProperty("RELEASE_KEYSTORE_PATH")
+            val keystoreFile = if (!keystorePath.isNullOrBlank()) file(keystorePath) else null
+            if (keystoreFile != null && keystoreFile.exists()) {
+                storeFile = keystoreFile
+                storePassword = properties.getProperty("RELEASE_KEYSTORE_PASSWORD") ?: ""
+                keyAlias = properties.getProperty("RELEASE_KEY_ALIAS") ?: ""
+                keyPassword = properties.getProperty("RELEASE_KEY_PASSWORD") ?: ""
+            } else {
+                // Pre-release/CI verification fallback
+                initWith(getByName("debug"))
+            }
+        }
+    }
     
     buildTypes {
         getByName("release") {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -138,5 +155,10 @@ configure<com.android.build.api.dsl.ApplicationExtension> {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+    }
+
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
     }
 }

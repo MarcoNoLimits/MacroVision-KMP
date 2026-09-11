@@ -8,12 +8,17 @@ import com.applovin.mediation.MaxAdListener
 import com.applovin.mediation.MaxError
 import com.applovin.mediation.MaxReward
 import com.applovin.mediation.MaxRewardedAdListener
+import com.applovin.mediation.ads.MaxAppOpenAd
 import com.applovin.mediation.ads.MaxInterstitialAd
 import com.applovin.mediation.ads.MaxRewardedAd
+import com.fitter.app.telemetry.AdRevenuePayload
+import com.fitter.app.telemetry.AdTelemetryManager
+import com.fitter.app.telemetry.DiagnosticsCrashHook
 import com.google.android.gms.ads.AdError
 import com.google.android.gms.ads.AdRequest
 import com.google.android.gms.ads.FullScreenContentCallback
 import com.google.android.gms.ads.LoadAdError
+import com.google.android.gms.ads.appopen.AppOpenAd
 import com.google.android.gms.ads.interstitial.InterstitialAd
 import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
 import com.google.android.gms.ads.rewarded.RewardedAd
@@ -27,13 +32,16 @@ class AndroidAdManager(
     // AdMob Direct Test Units
     private var interstitialAd: InterstitialAd? = null
     private var rewardedAd: RewardedAd? = null
+    private var appOpenAd: AppOpenAd? = null
 
     // AppLovin MAX Mediation Units
     private var maxInterstitialAd: MaxInterstitialAd? = null
     private var maxRewardedAd: MaxRewardedAd? = null
+    private var maxAppOpenAd: MaxAppOpenAd? = null
 
     private var isInterstitialLoading = false
     private var isRewardedLoading = false
+    private var isAppOpenLoading = false
 
     companion object {
         private const val TAG = "Fitter_Ads"
@@ -48,6 +56,7 @@ class AndroidAdManager(
             preloadAdMobInterstitial()
             preloadAdMobRewarded()
         }
+        preloadAppOpenAd()
     }
 
     private fun preloadMaxInterstitial() {
@@ -56,6 +65,19 @@ class AndroidAdManager(
         isInterstitialLoading = true
 
         val ad = MaxInterstitialAd(AdConfig.maxAndroidInterstitialId, activity)
+        ad.setRevenueListener { maxAd ->
+            AdTelemetryManager.trackAdRevenue(
+                AdRevenuePayload(
+                    adUnitId = maxAd.adUnitId,
+                    networkName = maxAd.networkName,
+                    revenue = maxAd.revenue,
+                    format = "INTERSTITIAL",
+                    placement = maxAd.placement ?: "",
+                    creativeId = maxAd.creativeId ?: "",
+                    timestampMillis = System.currentTimeMillis()
+                )
+            )
+        }
         ad.setListener(object : MaxAdListener {
             override fun onAdLoaded(ad: MaxAd) {
                 isInterstitialLoading = false
@@ -65,10 +87,12 @@ class AndroidAdManager(
             override fun onAdLoadFailed(adUnitId: String, error: MaxError) {
                 isInterstitialLoading = false
                 Log.w(TAG, "MAX Interstitial failed to load: ${error.message}")
+                DiagnosticsCrashHook.logAdError("MAX", "INTERSTITIAL", error.code.toString(), error.message)
             }
 
             override fun onAdDisplayed(ad: MaxAd) {
                 Log.d(TAG, "MAX Interstitial displayed.")
+                AdTelemetryManager.trackInterstitialImpression()
             }
 
             override fun onAdHidden(ad: MaxAd) {
@@ -83,6 +107,7 @@ class AndroidAdManager(
 
             override fun onAdDisplayFailed(ad: MaxAd, error: MaxError) {
                 Log.w(TAG, "MAX Interstitial display failed: ${error.message}")
+                DiagnosticsCrashHook.logAdError("MAX", "INTERSTITIAL_DISPLAY", error.code.toString(), error.message)
                 maxInterstitialAd = null
                 preloadMaxInterstitial()
             }
@@ -97,6 +122,19 @@ class AndroidAdManager(
         isRewardedLoading = true
 
         val ad = MaxRewardedAd.getInstance(AdConfig.maxAndroidRewardedId, activity)
+        ad.setRevenueListener { maxAd ->
+            AdTelemetryManager.trackAdRevenue(
+                AdRevenuePayload(
+                    adUnitId = maxAd.adUnitId,
+                    networkName = maxAd.networkName,
+                    revenue = maxAd.revenue,
+                    format = "REWARDED",
+                    placement = maxAd.placement ?: "",
+                    creativeId = maxAd.creativeId ?: "",
+                    timestampMillis = System.currentTimeMillis()
+                )
+            )
+        }
         ad.setListener(object : MaxRewardedAdListener {
             override fun onAdLoaded(ad: MaxAd) {
                 isRewardedLoading = false
@@ -106,10 +144,12 @@ class AndroidAdManager(
             override fun onAdLoadFailed(adUnitId: String, error: MaxError) {
                 isRewardedLoading = false
                 Log.w(TAG, "MAX Rewarded ad failed to load: ${error.message}")
+                DiagnosticsCrashHook.logAdError("MAX", "REWARDED", error.code.toString(), error.message)
             }
 
             override fun onAdDisplayed(ad: MaxAd) {
                 Log.d(TAG, "MAX Rewarded displayed.")
+                AdTelemetryManager.trackRewardedImpression()
             }
 
             override fun onAdHidden(ad: MaxAd) {
@@ -124,6 +164,7 @@ class AndroidAdManager(
 
             override fun onAdDisplayFailed(ad: MaxAd, error: MaxError) {
                 Log.w(TAG, "MAX Rewarded display failed: ${error.message}")
+                DiagnosticsCrashHook.logAdError("MAX", "REWARDED_DISPLAY", error.code.toString(), error.message)
                 maxRewardedAd = null
                 preloadMaxRewarded()
             }
@@ -157,6 +198,7 @@ class AndroidAdManager(
                     interstitialAd = null
                     isInterstitialLoading = false
                     Log.w(TAG, "AdMob Interstitial failed to load: ${loadAdError.message}")
+                    DiagnosticsCrashHook.logAdError("AdMob", "INTERSTITIAL", loadAdError.code.toString(), loadAdError.message)
                 }
             }
         )
@@ -183,9 +225,158 @@ class AndroidAdManager(
                     rewardedAd = null
                     isRewardedLoading = false
                     Log.w(TAG, "AdMob Rewarded Ad failed to load: ${loadAdError.message}")
+                    DiagnosticsCrashHook.logAdError("AdMob", "REWARDED", loadAdError.code.toString(), loadAdError.message)
                 }
             }
         )
+    }
+
+    override fun preloadAppOpenAd() {
+        val activity = currentActivityRef?.get() ?: return
+        if (isAppOpenLoading || appOpenAd != null || maxAppOpenAd?.isReady == true) return
+
+        isAppOpenLoading = true
+        AppOpenAdManager.recordAppOpenAdRequested()
+
+        if (AdConfig.isProductionMediationEnabled && AdConfig.maxAndroidAppOpenId.isNotBlank()) {
+            val ad = MaxAppOpenAd(AdConfig.maxAndroidAppOpenId, activity)
+            ad.setRevenueListener { maxAd ->
+                AdTelemetryManager.trackAdRevenue(
+                    AdRevenuePayload(
+                        adUnitId = maxAd.adUnitId,
+                        networkName = maxAd.networkName,
+                        revenue = maxAd.revenue,
+                        format = "APP_OPEN",
+                        placement = maxAd.placement ?: "",
+                        creativeId = maxAd.creativeId ?: "",
+                        timestampMillis = System.currentTimeMillis()
+                    )
+                )
+            }
+            ad.setListener(object : MaxAdListener {
+                override fun onAdLoaded(ad: MaxAd) {
+                    isAppOpenLoading = false
+                    AppOpenAdManager.recordAppOpenAdLoaded()
+                    Log.d(TAG, "MAX App Open ad loaded.")
+                }
+
+                override fun onAdLoadFailed(adUnitId: String, error: MaxError) {
+                    isAppOpenLoading = false
+                    AppOpenAdManager.recordAppOpenAdFailedToLoad(error.message)
+                    Log.w(TAG, "MAX App Open ad failed to load: ${error.message}")
+                }
+
+                override fun onAdDisplayed(ad: MaxAd) {
+                    Log.d(TAG, "MAX App Open ad displayed.")
+                }
+
+                override fun onAdHidden(ad: MaxAd) {
+                    maxAppOpenAd = null
+                    preloadAppOpenAd()
+                }
+
+                override fun onAdClicked(ad: MaxAd) {}
+
+                override fun onAdDisplayFailed(ad: MaxAd, error: MaxError) {
+                    DiagnosticsCrashHook.logAdError("MAX", "APP_OPEN_DISPLAY", error.code.toString(), error.message)
+                    maxAppOpenAd = null
+                    preloadAppOpenAd()
+                }
+            })
+            ad.loadAd()
+            maxAppOpenAd = ad
+        } else {
+            val context = contextProvider()
+            val request = AdRequest.Builder().build()
+            AppOpenAd.load(
+                context,
+                AdConfig.ANDROID_TEST_APP_OPEN,
+                request,
+                object : AppOpenAd.AppOpenAdLoadCallback() {
+                    override fun onAdLoaded(ad: AppOpenAd) {
+                        isAppOpenLoading = false
+                        appOpenAd = ad
+                        AppOpenAdManager.recordAppOpenAdLoaded()
+                        Log.d(TAG, "AdMob App Open ad loaded.")
+                    }
+
+                    override fun onAdFailedToLoad(loadAdError: LoadAdError) {
+                        isAppOpenLoading = false
+                        appOpenAd = null
+                        AppOpenAdManager.recordAppOpenAdFailedToLoad(loadAdError.message)
+                        Log.w(TAG, "AdMob App Open ad failed to load: ${loadAdError.message}")
+                    }
+                }
+            )
+        }
+    }
+
+    override fun showAppOpenAdIfEligible(onDismissed: () -> Unit) {
+        val activity = currentActivityRef?.get()
+        if (activity == null || activity.isFinishing || activity.isDestroyed) {
+            onDismissed()
+            return
+        }
+
+        if (!AppOpenAdManager.canShowAppOpenAd()) {
+            preloadAppOpenAd()
+            onDismissed()
+            return
+        }
+
+        if (AdConfig.isProductionMediationEnabled && maxAppOpenAd?.isReady == true) {
+            activity.runOnUiThread {
+                maxAppOpenAd?.setListener(object : MaxAdListener {
+                    override fun onAdLoaded(ad: MaxAd) {}
+                    override fun onAdLoadFailed(adUnitId: String, error: MaxError) {}
+                    override fun onAdDisplayed(ad: MaxAd) {
+                        AppOpenAdManager.recordAppOpenAdShown()
+                    }
+                    override fun onAdHidden(ad: MaxAd) {
+                        maxAppOpenAd = null
+                        preloadAppOpenAd()
+                        onDismissed()
+                    }
+                    override fun onAdClicked(ad: MaxAd) {}
+                    override fun onAdDisplayFailed(ad: MaxAd, error: MaxError) {
+                        DiagnosticsCrashHook.logAdError("MAX", "APP_OPEN_DISPLAY", error.code.toString(), error.message)
+                        maxAppOpenAd = null
+                        preloadAppOpenAd()
+                        onDismissed()
+                    }
+                })
+                maxAppOpenAd?.showAd()
+            }
+            return
+        }
+
+        val ad = appOpenAd
+        if (ad != null) {
+            activity.runOnUiThread {
+                ad.fullScreenContentCallback = object : FullScreenContentCallback() {
+                    override fun onAdShowedFullScreenContent() {
+                        AppOpenAdManager.recordAppOpenAdShown()
+                    }
+
+                    override fun onAdDismissedFullScreenContent() {
+                        appOpenAd = null
+                        preloadAppOpenAd()
+                        onDismissed()
+                    }
+
+                    override fun onAdFailedToShowFullScreenContent(adError: AdError) {
+                        DiagnosticsCrashHook.logAdError("AdMob", "APP_OPEN_DISPLAY", adError.code.toString(), adError.message)
+                        appOpenAd = null
+                        preloadAppOpenAd()
+                        onDismissed()
+                    }
+                }
+                ad.show(activity)
+            }
+        } else {
+            preloadAppOpenAd()
+            onDismissed()
+        }
     }
 
     override fun showScanProcessingAd(onFinished: () -> Unit) {
@@ -196,7 +387,9 @@ class AndroidAdManager(
                 maxInterstitialAd?.setListener(object : MaxAdListener {
                     override fun onAdLoaded(ad: MaxAd) {}
                     override fun onAdLoadFailed(adUnitId: String, error: MaxError) {}
-                    override fun onAdDisplayed(ad: MaxAd) {}
+                    override fun onAdDisplayed(ad: MaxAd) {
+                        AdTelemetryManager.trackInterstitialImpression()
+                    }
                     override fun onAdHidden(ad: MaxAd) {
                         maxInterstitialAd = null
                         preloadMaxInterstitial()
@@ -204,6 +397,7 @@ class AndroidAdManager(
                     }
                     override fun onAdClicked(ad: MaxAd) {}
                     override fun onAdDisplayFailed(ad: MaxAd, error: MaxError) {
+                        DiagnosticsCrashHook.logAdError("MAX", "INTERSTITIAL_DISPLAY", error.code.toString(), error.message)
                         maxInterstitialAd = null
                         preloadMaxInterstitial()
                         onFinished()
@@ -218,6 +412,11 @@ class AndroidAdManager(
         if (activity != null && !activity.isFinishing && !activity.isDestroyed && ad != null) {
             activity.runOnUiThread {
                 ad.fullScreenContentCallback = object : FullScreenContentCallback() {
+                    override fun onAdShowedFullScreenContent() {
+                        Log.d(TAG, "Interstitial ad showed full screen.")
+                        AdTelemetryManager.trackInterstitialImpression()
+                    }
+
                     override fun onAdDismissedFullScreenContent() {
                         Log.d(TAG, "Interstitial ad dismissed.")
                         interstitialAd = null
@@ -227,6 +426,7 @@ class AndroidAdManager(
 
                     override fun onAdFailedToShowFullScreenContent(adError: AdError) {
                         Log.w(TAG, "Interstitial ad failed to show: ${adError.message}")
+                        DiagnosticsCrashHook.logAdError("AdMob", "INTERSTITIAL_DISPLAY", adError.code.toString(), adError.message)
                         interstitialAd = null
                         preloadAdMobInterstitial()
                         onFinished()
@@ -250,7 +450,9 @@ class AndroidAdManager(
                 maxRewardedAd?.setListener(object : MaxRewardedAdListener {
                     override fun onAdLoaded(ad: MaxAd) {}
                     override fun onAdLoadFailed(adUnitId: String, error: MaxError) {}
-                    override fun onAdDisplayed(ad: MaxAd) {}
+                    override fun onAdDisplayed(ad: MaxAd) {
+                        AdTelemetryManager.trackRewardedImpression()
+                    }
                     override fun onAdHidden(ad: MaxAd) {
                         maxRewardedAd = null
                         preloadMaxRewarded()
@@ -259,6 +461,7 @@ class AndroidAdManager(
                     }
                     override fun onAdClicked(ad: MaxAd) {}
                     override fun onAdDisplayFailed(ad: MaxAd, error: MaxError) {
+                        DiagnosticsCrashHook.logAdError("MAX", "REWARDED_DISPLAY", error.code.toString(), error.message)
                         maxRewardedAd = null
                         preloadMaxRewarded()
                         onDismissed()
@@ -277,6 +480,11 @@ class AndroidAdManager(
             activity.runOnUiThread {
                 var rewardGranted = false
                 ad.fullScreenContentCallback = object : FullScreenContentCallback() {
+                    override fun onAdShowedFullScreenContent() {
+                        Log.d(TAG, "Rewarded ad showed full screen.")
+                        AdTelemetryManager.trackRewardedImpression()
+                    }
+
                     override fun onAdDismissedFullScreenContent() {
                         Log.d(TAG, "Rewarded ad dismissed.")
                         rewardedAd = null
@@ -289,6 +497,7 @@ class AndroidAdManager(
 
                     override fun onAdFailedToShowFullScreenContent(adError: AdError) {
                         Log.w(TAG, "Rewarded ad failed to show: ${adError.message}")
+                        DiagnosticsCrashHook.logAdError("AdMob", "REWARDED_DISPLAY", adError.code.toString(), adError.message)
                         rewardedAd = null
                         preloadAdMobRewarded()
                         onDismissed()

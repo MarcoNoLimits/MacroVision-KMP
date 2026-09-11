@@ -1,5 +1,6 @@
 package com.fitter.app.ads
 
+import com.fitter.app.telemetry.AdTelemetryManager
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -38,12 +39,21 @@ class ScanQuotaManagerTest {
             memoryStore[key] = value
         }
         AppOpenAdManager.currentTimeMillisProvider = { simulatedTimeMillis }
+
+        AdTelemetryManager.preferenceReader = { key, default ->
+            memoryStore[key] ?: default
+        }
+        AdTelemetryManager.preferenceWriter = { key, value ->
+            memoryStore[key] = value
+        }
+        AdTelemetryManager.currentTimeMillisProvider = { simulatedTimeMillis }
     }
 
     @AfterTest
     fun tearDown() {
         ScanQuotaManager.resetToDefaults()
         AppOpenAdManager.resetToDefaults()
+        AdTelemetryManager.resetForTesting()
         memoryStore.clear()
     }
 

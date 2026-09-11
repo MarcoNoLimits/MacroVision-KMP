@@ -26,6 +26,19 @@ class MainActivity : ComponentActivity() {
 
             AppLovinSdk.getInstance(this).initialize(initConfig) {
                 getPlatformAdManager().preloadAds()
+                // Regional Privacy / CMP Consent Flow for GDPR, UK & CCPA compliance
+                try {
+                    val cmpService = AppLovinSdk.getInstance(this@MainActivity).cmpService
+                    if (cmpService.hasSupportedCmp()) {
+                        cmpService.showCmpForExistingUser(this@MainActivity) { error ->
+                            if (error != null) {
+                                android.util.Log.d("Fitter_Privacy", "CMP consent notice: ${error.message}")
+                            }
+                        }
+                    }
+                } catch (t: Throwable) {
+                    android.util.Log.d("Fitter_Privacy", "CMP check: ${t.message}")
+                }
             }
         } else {
             // Initialize Google Mobile Ads SDK on a background thread

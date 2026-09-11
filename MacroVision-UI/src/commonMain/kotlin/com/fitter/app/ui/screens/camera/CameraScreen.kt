@@ -31,6 +31,7 @@ import com.fitter.app.ui.theme.PrimaryAccent
 import com.fitter.app.ui.theme.TextColor
 import com.fitter.shared.api.NutritionClient
 import com.fitter.shared.model.NutritionResponse
+import com.fitter.app.telemetry.DiagnosticsCrashHook
 import io.ktor.util.encodeBase64
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -88,6 +89,7 @@ fun CameraScreen(
                                 }
                             } catch (e: Exception) {
                                 apiError = e.message ?: "Unknown API Error"
+                                DiagnosticsCrashHook.logVlmError("CameraScreen", apiError!!, e)
                                 if (isAdFinished) {
                                     errorMessage = apiError
                                     isAnalyzing = false
@@ -119,7 +121,9 @@ fun CameraScreen(
                                 }
                                 onResultObtained(responseJson)
                             } catch (e: Exception) {
-                                errorMessage = e.message ?: "Unknown API Error"
+                                val err = e.message ?: "Unknown API Error"
+                                DiagnosticsCrashHook.logVlmError("CameraScreen", err, e)
+                                errorMessage = err
                                 isAnalyzing = false
                             }
                         }
@@ -283,7 +287,9 @@ fun CameraScreen(
                                                     }
                                                     onResultObtained(responseJson)
                                                 } catch (e: Exception) {
-                                                    errorMessage = e.message ?: "Unknown API Error"
+                                                    val err = e.message ?: "Unknown API Error"
+                                                    DiagnosticsCrashHook.logVlmError("CameraScreen", err, e)
+                                                    errorMessage = err
                                                     isAnalyzing = false
                                                 }
                                             }

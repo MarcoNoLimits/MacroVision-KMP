@@ -13,6 +13,8 @@ import com.fitter.app.ads.AdManager
 import com.fitter.app.ads.AppOpenAdManager
 import com.fitter.app.ads.ScanQuotaManager
 import com.fitter.app.data.PreferenceKeyValueStorage
+import com.fitter.app.telemetry.CohortRetentionTracker
+import com.fitter.app.telemetry.DiagnosticsCrashHook
 import com.fitter.app.ui.navigation.CameraDestination
 import com.fitter.app.ui.navigation.DashboardDestination
 import com.fitter.app.ui.navigation.ResultDestination
@@ -83,8 +85,21 @@ fun App() {
             val adManager = remember { getPlatformAdManager() }
 
             LaunchedEffect(Unit) {
+                // Wire diagnostic crash hooks to FailoverNutritionClient
+                FailoverNutritionClient.onErrorHook = { provider, error ->
+                    DiagnosticsCrashHook.logVlmError(provider, error.message ?: "Unknown VLM error", error)
+                }
+                FailoverNutritionClient.onFatalHook = { tag, error ->
+                    DiagnosticsCrashHook.recordFatalCrash(tag, error.message ?: "VLM pipeline failed", error)
+                }
+
+                // Record active retention session for cohort tracking
+                CohortRetentionTracker.recordActiveDailySession(selectedDateKey)
+
+                // Session & Ad Lifecycle
                 AppOpenAdManager.incrementSessionCount()
                 adManager.preloadAds()
+                adManager.showAppOpenAdIfEligible()
             }
 
             var playAdDuringScan by remember {

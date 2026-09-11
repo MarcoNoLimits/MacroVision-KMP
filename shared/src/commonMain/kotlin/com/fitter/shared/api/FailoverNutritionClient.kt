@@ -21,6 +21,7 @@ class FailoverNutritionClient(
                 return geminiClient.analyzeMealImage(base64Image, geminiKey, plateSizeInches = plateSizeInches)
             } catch (e: Exception) {
                 errors.add("Gemini error: ${e.message}")
+                onErrorHook?.invoke("Gemini", e)
             }
         }
 
@@ -30,6 +31,7 @@ class FailoverNutritionClient(
                 return openRouterClient.analyzeMealImage(base64Image, openRouterKey, plateSizeInches = plateSizeInches)
             } catch (e: Exception) {
                 errors.add("OpenRouter error: ${e.message}")
+                onErrorHook?.invoke("OpenRouter", e)
             }
         }
 
@@ -39,6 +41,7 @@ class FailoverNutritionClient(
                 return groqClient.analyzeMealImage(base64Image, groqKey, plateSizeInches = plateSizeInches)
             } catch (e: Exception) {
                 errors.add("Groq error: ${e.message}")
+                onErrorHook?.invoke("Groq", e)
             }
         }
 
@@ -47,7 +50,9 @@ class FailoverNutritionClient(
         } else {
             errors.joinToString("; ")
         }
-        throw Exception("All configured APIs failed: $errorText")
+        val finalException = Exception("All configured APIs failed: $errorText")
+        onFatalHook?.invoke("FailoverNutritionClient", finalException)
+        throw finalException
     }
 
     override suspend fun recalculateMealNutrition(items: List<Pair<String, Int>>): NutritionResponse {
@@ -59,6 +64,7 @@ class FailoverNutritionClient(
                 return geminiClient.recalculateMealNutrition(items, geminiKey)
             } catch (e: Exception) {
                 errors.add("Gemini error: ${e.message}")
+                onErrorHook?.invoke("Gemini", e)
             }
         }
 
@@ -68,6 +74,7 @@ class FailoverNutritionClient(
                 return openRouterClient.recalculateMealNutrition(items, openRouterKey)
             } catch (e: Exception) {
                 errors.add("OpenRouter error: ${e.message}")
+                onErrorHook?.invoke("OpenRouter", e)
             }
         }
 
@@ -77,6 +84,7 @@ class FailoverNutritionClient(
                 return groqClient.recalculateMealNutrition(items, groqKey)
             } catch (e: Exception) {
                 errors.add("Groq error: ${e.message}")
+                onErrorHook?.invoke("Groq", e)
             }
         }
 
@@ -85,7 +93,9 @@ class FailoverNutritionClient(
         } else {
             errors.joinToString("; ")
         }
-        throw Exception("All configured APIs failed: $errorText")
+        val finalException = Exception("All configured APIs failed: $errorText")
+        onFatalHook?.invoke("FailoverNutritionClient", finalException)
+        throw finalException
     }
 
     private fun isOpenRouterConfigured(): Boolean {
@@ -98,5 +108,10 @@ class FailoverNutritionClient(
 
     private fun isGroqConfigured(): Boolean {
         return groqKey.isNotBlank() && groqKey != "your_groq_api_key_here"
+    }
+
+    companion object {
+        var onErrorHook: ((provider: String, error: Throwable) -> Unit)? = null
+        var onFatalHook: ((tag: String, error: Throwable) -> Unit)? = null
     }
 }

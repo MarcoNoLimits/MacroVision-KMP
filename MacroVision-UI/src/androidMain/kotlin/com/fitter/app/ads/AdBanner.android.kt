@@ -33,6 +33,33 @@ actual fun AdBanner(modifier: Modifier) {
                     .background(Color.Transparent),
                 factory = { context ->
                     MaxAdView(AdConfig.maxAndroidBannerId, context).apply {
+                        setRevenueListener { maxAd ->
+                            com.fitter.app.telemetry.AdTelemetryManager.trackAdRevenue(
+                                com.fitter.app.telemetry.AdRevenuePayload(
+                                    adUnitId = maxAd.adUnitId,
+                                    networkName = maxAd.networkName,
+                                    revenue = maxAd.revenue,
+                                    format = "BANNER",
+                                    placement = maxAd.placement ?: "",
+                                    creativeId = maxAd.creativeId ?: "",
+                                    timestampMillis = System.currentTimeMillis()
+                                )
+                            )
+                        }
+                        setListener(object : com.applovin.mediation.MaxAdViewAdListener {
+                            override fun onAdLoaded(ad: com.applovin.mediation.MaxAd) {
+                                com.fitter.app.telemetry.AdTelemetryManager.trackBannerImpression()
+                            }
+                            override fun onAdLoadFailed(adUnitId: String, error: com.applovin.mediation.MaxError) {
+                                com.fitter.app.telemetry.DiagnosticsCrashHook.logAdError("MAX", "BANNER", error.code.toString(), error.message)
+                            }
+                            override fun onAdDisplayed(ad: com.applovin.mediation.MaxAd) {}
+                            override fun onAdHidden(ad: com.applovin.mediation.MaxAd) {}
+                            override fun onAdClicked(ad: com.applovin.mediation.MaxAd) {}
+                            override fun onAdDisplayFailed(ad: com.applovin.mediation.MaxAd, error: com.applovin.mediation.MaxError) {}
+                            override fun onAdExpanded(ad: com.applovin.mediation.MaxAd) {}
+                            override fun onAdCollapsed(ad: com.applovin.mediation.MaxAd) {}
+                        })
                         loadAd()
                     }
                 },
@@ -49,6 +76,14 @@ actual fun AdBanner(modifier: Modifier) {
                     AdView(context).apply {
                         setAdSize(AdSize.BANNER)
                         adUnitId = AdConfig.ANDROID_TEST_BANNER
+                        adListener = object : com.google.android.gms.ads.AdListener() {
+                            override fun onAdLoaded() {
+                                com.fitter.app.telemetry.AdTelemetryManager.trackBannerImpression()
+                            }
+                            override fun onAdFailedToLoad(loadAdError: com.google.android.gms.ads.LoadAdError) {
+                                com.fitter.app.telemetry.DiagnosticsCrashHook.logAdError("AdMob", "BANNER", loadAdError.code.toString(), loadAdError.message)
+                            }
+                        }
                         loadAd(AdRequest.Builder().build())
                     }
                 },

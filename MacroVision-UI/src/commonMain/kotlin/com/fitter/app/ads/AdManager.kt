@@ -91,6 +91,12 @@ interface AdManager {
     /** Preloads ads in the background. */
     fun preloadAds()
 
+    /** Preloads an App Open ad in the background. */
+    fun preloadAppOpenAd() {}
+
+    /** Shows an App Open ad if session count and cooldown requirements are met. */
+    fun showAppOpenAdIfEligible(onDismissed: () -> Unit = {}) {}
+
     /** Opens AppLovin MAX Mediation Debugger for on-device testing and certification. */
     fun showMediationDebugger() {}
 }
@@ -219,8 +225,21 @@ object AppOpenAdManager {
         return preferenceReader("last_app_open_ad_timestamp", "0").toLongOrNull() ?: 0L
     }
 
+    fun recordAppOpenAdRequested() {
+        com.fitter.app.telemetry.AdTelemetryManager.trackAppOpenRequest()
+    }
+
+    fun recordAppOpenAdLoaded() {
+        com.fitter.app.telemetry.AdTelemetryManager.trackAppOpenLoaded()
+    }
+
+    fun recordAppOpenAdFailedToLoad(errorMessage: String? = null) {
+        com.fitter.app.telemetry.AdTelemetryManager.trackAppOpenFailedToLoad(errorMessage)
+    }
+
     fun recordAppOpenAdShown() {
         preferenceWriter("last_app_open_ad_timestamp", currentTimeMillisProvider().toString())
+        com.fitter.app.telemetry.AdTelemetryManager.trackAppOpenImpression()
     }
 
     fun canShowAppOpenAd(): Boolean {
