@@ -11,12 +11,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.fitter.app.ui.theme.MutedTextColor
-import com.fitter.app.ui.theme.TextColor
+import com.fitter.app.ui.theme.*
 
 @Composable
 fun DashboardMacroCard(
@@ -28,9 +24,10 @@ fun DashboardMacroCard(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .shadow(1.dp, RoundedCornerShape(16.dp))
-            .background(Color.White, RoundedCornerShape(16.dp))
-            .border(1.dp, Color(0xFFF1F5F9), RoundedCornerShape(16.dp))
+            .shadow(1.dp, RoundedCornerShape(RadiusM)) // F1.2: was 16.dp → RadiusM
+            .background(Color.White, RoundedCornerShape(RadiusM))
+            // F1.1: SurfaceTint replaces Color(0xFFF1F5F9)
+            .border(1.dp, SurfaceTint, RoundedCornerShape(RadiusM))
             .padding(12.dp)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -39,25 +36,25 @@ fun DashboardMacroCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // F2.1: Eyebrow replaces 10.sp inline
                 Text(
                     text = title,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
+                    style = BrandTypography.Eyebrow,
                     color = MutedTextColor
                 )
                 Box(modifier = Modifier.size(5.dp).background(color, CircleShape))
             }
+            // F2.1: KpiNumeral replaces 16.sp inline
             Text(
                 text = value,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace,
+                style = BrandTypography.KpiNumeral,
                 color = TextColor
             )
+            // F2.1: BodySmall (12sp) replaces 9.sp — raises it above the 12sp min threshold
+            // Note: 9.sp eliminated per spec; BodySmall is the closest permitted size for muted text
             Text(
                 text = "$percent of goal",
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Medium,
+                style = BrandTypography.BodySmall,
                 color = MutedTextColor
             )
         }

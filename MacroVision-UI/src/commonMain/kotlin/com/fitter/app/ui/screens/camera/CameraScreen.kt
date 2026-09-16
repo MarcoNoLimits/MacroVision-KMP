@@ -1,5 +1,11 @@
 package com.fitter.app.ui.screens.camera
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -19,16 +25,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.fitter.app.CameraPreview
 import com.fitter.app.ads.AdManager
 import com.fitter.app.compressImage
 import com.fitter.app.ui.components.getMockJson
-import com.fitter.app.ui.theme.BorderColor
-import com.fitter.app.ui.theme.CardBackground
-import com.fitter.app.ui.theme.MutedTextColor
-import com.fitter.app.ui.theme.PrimaryAccent
-import com.fitter.app.ui.theme.TextColor
+import com.fitter.app.ui.theme.*
 import com.fitter.shared.api.NutritionClient
 import com.fitter.shared.model.NutritionResponse
 import com.fitter.app.telemetry.DiagnosticsCrashHook
@@ -50,16 +51,19 @@ fun CameraScreen(
     onNavigateBack: () -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
-    
+
     var isAnalyzing by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var currentCapturedBytes by remember { mutableStateOf<ByteArray?>(null) }
+    // F3.3: isCancelled guards the result callback so a cancelled state doesn't later navigate
+    var isCancelled by remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         if (!isAnalyzing && errorMessage == null) {
             CameraPreview(
                 modifier = Modifier.fillMaxSize(),
                 onPhotoCaptured = { imageBytes ->
+                    isCancelled = false
                     val compressedBytes = compressImage(imageBytes)
                     currentCapturedBytes = compressedBytes
                     onPhotoCaptured(compressedBytes)
@@ -84,13 +88,13 @@ fun CameraScreen(
                                     Json.encodeToString(NutritionResponse.serializer(), response)
                                 }
                                 apiResultJson = responseJson
-                                if (isAdFinished) {
+                                if (isAdFinished && !isCancelled) {
                                     onResultObtained(responseJson)
                                 }
                             } catch (e: Exception) {
                                 apiError = e.message ?: "Unknown API Error"
                                 DiagnosticsCrashHook.logVlmError("CameraScreen", apiError!!, e)
-                                if (isAdFinished) {
+                                if (isAdFinished && !isCancelled) {
                                     errorMessage = apiError
                                     isAnalyzing = false
                                 }
@@ -100,18 +104,19 @@ fun CameraScreen(
                         // 2. Play Ad while scan is processing
                         adManager.showScanProcessingAd {
                             isAdFinished = true
-                            if (apiResultJson != null) {
-                                onResultObtained(apiResultJson)
-                            } else if (apiError != null) {
-                                errorMessage = apiError
-                                isAnalyzing = false
+                            if (!isCancelled) {
+                                if (apiResultJson != null) {
+                                    onResultObtained(apiResultJson!!)
+                                } else if (apiError != null) {
+                                    errorMessage = apiError
+                                    isAnalyzing = false
+                                }
                             }
                         }
                     } else {
                         coroutineScope.launch {
                             try {
                                 val responseJson = if (isMockMode) {
-                                    // Simulate API delay
                                     delay(2000)
                                     getMockJson()
                                 } else {
@@ -119,12 +124,14 @@ fun CameraScreen(
                                     val response = apiClient.analyzeMealImage(base64, plateSizeInches)
                                     Json.encodeToString(NutritionResponse.serializer(), response)
                                 }
-                                onResultObtained(responseJson)
+                                if (!isCancelled) onResultObtained(responseJson)
                             } catch (e: Exception) {
                                 val err = e.message ?: "Unknown API Error"
                                 DiagnosticsCrashHook.logVlmError("CameraScreen", err, e)
-                                errorMessage = err
-                                isAnalyzing = false
+                                if (!isCancelled) {
+                                    errorMessage = err
+                                    isAnalyzing = false
+                                }
                             }
                         }
                     }
@@ -133,189 +140,319 @@ fun CameraScreen(
             )
         }
 
-        // Loading state with modern Vision Active style
-        if (isAnalyzing) {
+        // F3.2: AnimatedVisibility wraps the analyzing card (fade + scaleIn 0.98→1)
+        AnimatedVisibility(
+            visible = isAnalyzing && REDUCED_MOTION_ENABLED.not(), // F4.4: gate
+            enter = fadeIn() + scaleIn(
+                initialScale = 0.98f,
+                animationSpec = spring(stiffness = 300f)
+            ),
+            exit = fadeOut() + scaleOut(targetScale = 0.98f)
+        ) {
+            AnalyzingCard()
+        }
+        // When REDUCED_MOTION_ENABLED, show without animation
+        if (REDUCED_MOTION_ENABLED && isAnalyzing) {
+            AnalyzingCard()
+        }
+
+        // F3.3: "Analyzing meal in background…" chip shown while ad plays
+        // Native ad overlay can't be intercepted with Compose; we show a persistent
+        // non-interactive chip and a Cancel button below the analyzing card.
+        if (isAnalyzing && playAdDuringScan) {
             Box(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.75f)),
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 32.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = CardBackground),
-                    shape = RoundedCornerShape(24.dp),
-                    modifier = Modifier
-                        .fillMaxWidth(0.85f)
-                        .border(1.dp, BorderColor, RoundedCornerShape(24.dp))
-                        .shadow(16.dp, RoundedCornerShape(24.dp))
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(20.dp),
-                        modifier = Modifier.padding(32.dp)
+                    // Background analysis chip
+                    Surface(
+                        color = SurfaceTint, // F1.1
+                        shape = RoundedCornerShape(RadiusM), // F1.2
+                        tonalElevation = 2.dp
                     ) {
-                        CircularProgressIndicator(
-                            color = PrimaryAccent,
-                            strokeWidth = 4.dp,
-                            modifier = Modifier.size(56.dp)
-                        )
-                        
                         Text(
-                            text = "Analyzing Meal...",
-                            style = MaterialTheme.typography.titleLarge.copy(
-                                fontWeight = FontWeight.Bold
-                            ),
-                            color = TextColor
+                            text = "Analyzing meal in background…",
+                            style = BrandTypography.BodySmall,
+                            color = TextColor,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                         )
-                        
-                        Text(
-                            text = "Fitter is calculating macro estimates and identifying ingredients from your capture.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MutedTextColor,
-                            textAlign = TextAlign.Center
-                        )
+                    }
+
+                    // F3.3: Cancel affordance — tapping closes the ad path, discards in-flight request
+                    OutlinedButton(
+                        onClick = {
+                            isCancelled = true // guard: result callback won't fire
+                            isAnalyzing = false
+                            currentCapturedBytes = null
+                            onNavigateBack()
+                        },
+                        border = BorderStroke(1.dp, BorderColor)
+                    ) {
+                        Text("Cancel", color = TextColor, style = BrandTypography.BodySmall)
                     }
                 }
             }
         }
 
-        // Error Card UI
-        errorMessage?.let { errorText ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.8f))
-                    .padding(24.dp),
-                contentAlignment = Alignment.Center
+        // F3.2: AnimatedVisibility wraps the error card
+        AnimatedVisibility(
+            visible = errorMessage != null && !REDUCED_MOTION_ENABLED, // F4.4
+            enter = fadeIn() + scaleIn(
+                initialScale = 0.98f,
+                animationSpec = spring(stiffness = 300f)
+            ),
+            exit = fadeOut()
+        ) {
+            errorMessage?.let { errorText ->
+                ErrorCard(
+                    errorText = errorText,
+                    isMockMode = isMockMode,
+                    onRetake = {
+                        errorMessage = null
+                        currentCapturedBytes = null
+                        isAnalyzing = false
+                    },
+                    onResend = if (currentCapturedBytes != null) {
+                        {
+                            errorMessage = null
+                            isAnalyzing = true
+                            isCancelled = false
+                            coroutineScope.launch {
+                                try {
+                                    val bytes = currentCapturedBytes!!
+                                    val responseJson = if (isMockMode) {
+                                        delay(2000)
+                                        getMockJson()
+                                    } else {
+                                        val base64 = bytes.encodeBase64()
+                                        val response = apiClient.analyzeMealImage(base64, plateSizeInches)
+                                        Json.encodeToString(NutritionResponse.serializer(), response)
+                                    }
+                                    onResultObtained(responseJson)
+                                } catch (e: Exception) {
+                                    val err = e.message ?: "Unknown API Error"
+                                    DiagnosticsCrashHook.logVlmError("CameraScreen", err, e)
+                                    errorMessage = err
+                                    isAnalyzing = false
+                                }
+                            }
+                        }
+                    } else null,
+                    onCancel = {
+                        errorMessage = null
+                        currentCapturedBytes = null
+                        isAnalyzing = false
+                        onNavigateBack()
+                    }
+                )
+            }
+        }
+        // Reduced motion: show error without animation
+        if (REDUCED_MOTION_ENABLED && errorMessage != null) {
+            errorMessage?.let { errorText ->
+                ErrorCard(
+                    errorText = errorText,
+                    isMockMode = isMockMode,
+                    onRetake = {
+                        errorMessage = null
+                        currentCapturedBytes = null
+                        isAnalyzing = false
+                    },
+                    onResend = if (currentCapturedBytes != null) {
+                        {
+                            errorMessage = null
+                            isAnalyzing = true
+                            isCancelled = false
+                            coroutineScope.launch {
+                                try {
+                                    val bytes = currentCapturedBytes!!
+                                    val responseJson = if (isMockMode) {
+                                        delay(2000)
+                                        getMockJson()
+                                    } else {
+                                        val base64 = bytes.encodeBase64()
+                                        val response = apiClient.analyzeMealImage(base64, plateSizeInches)
+                                        Json.encodeToString(NutritionResponse.serializer(), response)
+                                    }
+                                    onResultObtained(responseJson)
+                                } catch (e: Exception) {
+                                    val err = e.message ?: "Unknown API Error"
+                                    DiagnosticsCrashHook.logVlmError("CameraScreen", err, e)
+                                    errorMessage = err
+                                    isAnalyzing = false
+                                }
+                            }
+                        }
+                    } else null,
+                    onCancel = {
+                        errorMessage = null
+                        currentCapturedBytes = null
+                        isAnalyzing = false
+                        onNavigateBack()
+                    }
+                )
+            }
+        }
+    }
+}
+
+// Extracted composable to avoid duplication between animated and reduced-motion paths
+@Composable
+private fun AnalyzingCard() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.75f)),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = CardBackground),
+            shape = RoundedCornerShape(RadiusL), // F1.2
+            modifier = Modifier
+                .fillMaxWidth(0.85f)
+                .border(1.dp, BorderColor, RoundedCornerShape(RadiusL))
+                .shadow(16.dp, RoundedCornerShape(RadiusL))
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+                modifier = Modifier.padding(32.dp)
             ) {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = CardBackground),
-                    shape = RoundedCornerShape(24.dp),
+                CircularProgressIndicator(
+                    color = PrimaryAccent,
+                    strokeWidth = 4.dp,
+                    modifier = Modifier.size(56.dp)
+                )
+                Text(
+                    text = "Analyzing Meal...",
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontWeight = FontWeight.Bold
+                    ),
+                    color = TextColor
+                )
+                Text(
+                    text = "Fitter is calculating macro estimates and identifying ingredients from your capture.",
+                    style = BrandTypography.BodySmall,
+                    color = MutedTextColor,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ErrorCard(
+    errorText: String,
+    isMockMode: Boolean,
+    onRetake: () -> Unit,
+    onResend: (() -> Unit)?,
+    onCancel: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.8f))
+            .padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = CardBackground),
+            shape = RoundedCornerShape(RadiusL), // F1.2
+            modifier = Modifier
+                .fillMaxWidth()
+                // F1.1: DangerColor replaces Color(0xFFEF4444)
+                .border(1.dp, DangerColor.copy(alpha = 0.5f), RoundedCornerShape(RadiusL))
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier.padding(24.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = "Error",
+                    tint = DangerColor, // F1.1
+                    modifier = Modifier.size(48.dp)
+                )
+                Text(
+                    text = "Could not analyze image",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = TextColor,
+                    textAlign = TextAlign.Center
+                )
+
+                // Monospace Diagnostics Log Box — F1.1 all raw hex → semantic tokens
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .border(1.dp, Color(0xFFEF4444).copy(alpha = 0.5f), RoundedCornerShape(24.dp))
+                        .background(DangerSoft, RoundedCornerShape(RadiusS)) // F1.1+F1.2
+                        .border(1.dp, DangerBorder, RoundedCornerShape(RadiusS))
+                        .padding(12.dp)
                 ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
-                        modifier = Modifier.padding(24.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Warning,
-                            contentDescription = "Error",
-                            tint = Color(0xFFEF4444),
-                            modifier = Modifier.size(48.dp)
-                        )
-                        
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
-                            text = "Could not analyze image",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                            color = TextColor,
-                            textAlign = TextAlign.Center
+                            text = "API DIAGNOSTICS LOG",
+                            style = BrandTypography.Eyebrow,
+                            color = DangerTextStrong // F1.1
                         )
-                        
-                        // Monospace Diagnostics Log Box
-                        Box(
+                        Text(
+                            text = if (isMockMode && errorText.contains("placeholder"))
+                                "Mock API Key issue."
+                            else
+                                errorText,
+                            // F2.1: Diagnostics style (11sp monospace) — kept at 11sp per spec exemption
+                            style = BrandTypography.Diagnostics,
+                            color = DangerTextDeep, // F1.1
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .background(Color(0xFFFEF2F2), RoundedCornerShape(12.dp))
-                                .border(1.dp, Color(0xFFFCA5A5), RoundedCornerShape(12.dp))
-                                .padding(12.dp)
+                                .heightIn(max = 100.dp)
+                                .verticalScroll(rememberScrollState())
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        OutlinedButton(
+                            onClick = onRetake,
+                            modifier = Modifier.weight(1f),
+                            border = BorderStroke(1.dp, BorderColor)
                         ) {
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(
-                                    text = "API DIAGNOSTICS LOG",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFFB91C1C),
-                                    letterSpacing = 1.sp
-                                )
-                                Text(
-                                    text = if (isMockMode && errorText.contains("placeholder")) 
-                                        "Mock API Key issue." 
-                                    else 
-                                        errorText,
-                                    fontSize = 11.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    color = Color(0xFF7F1D1D),
-                                    modifier = Modifier
-                                        .heightIn(max = 100.dp)
-                                        .verticalScroll(rememberScrollState())
-                                )
-                            }
+                            Text("Retake Photo", color = TextColor, style = BrandTypography.BodySmall)
                         }
 
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Column(
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                modifier = Modifier.fillMaxWidth()
+                        if (onResend != null) {
+                            Button(
+                                onClick = onResend,
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(containerColor = PrimaryAccent)
                             ) {
-                                // Retake Photo Button
-                                OutlinedButton(
-                                    onClick = {
-                                        errorMessage = null
-                                        currentCapturedBytes = null
-                                        isAnalyzing = false
-                                    },
-                                    modifier = Modifier.weight(1f),
-                                    border = BorderStroke(1.dp, BorderColor)
-                                ) {
-                                    Text("Retake Photo", color = TextColor)
-                                }
-                                
-                                // Resend Photo Button
-                                if (currentCapturedBytes != null) {
-                                    Button(
-                                        onClick = {
-                                            errorMessage = null
-                                            isAnalyzing = true
-                                            coroutineScope.launch {
-                                                try {
-                                                    val bytes = currentCapturedBytes!!
-                                                    val responseJson = if (isMockMode) {
-                                                        delay(2000)
-                                                        getMockJson()
-                                                    } else {
-                                                        val base64 = bytes.encodeBase64()
-                                                        val response = apiClient.analyzeMealImage(base64, plateSizeInches)
-                                                        Json.encodeToString(NutritionResponse.serializer(), response)
-                                                    }
-                                                    onResultObtained(responseJson)
-                                                } catch (e: Exception) {
-                                                    val err = e.message ?: "Unknown API Error"
-                                                    DiagnosticsCrashHook.logVlmError("CameraScreen", err, e)
-                                                    errorMessage = err
-                                                    isAnalyzing = false
-                                                }
-                                            }
-                                        },
-                                        modifier = Modifier.weight(1f),
-                                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryAccent)
-                                    ) {
-                                        Text("Resend Photo", color = Color.White)
-                                    }
-                                }
-                            }
-                            
-                            // Cancel / Go Back Button
-                            OutlinedButton(
-                                onClick = {
-                                    errorMessage = null
-                                    currentCapturedBytes = null
-                                    isAnalyzing = false
-                                    onNavigateBack()
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                border = BorderStroke(1.dp, BorderColor)
-                            ) {
-                                Text("Cancel", color = TextColor)
+                                Text("Resend Photo", color = Color.White, style = BrandTypography.BodySmall)
                             }
                         }
+                    }
+
+                    // F3.3: Cancel is present in error card
+                    OutlinedButton(
+                        onClick = onCancel,
+                        modifier = Modifier.fillMaxWidth(),
+                        border = BorderStroke(1.dp, BorderColor)
+                    ) {
+                        Text("Cancel", color = TextColor, style = BrandTypography.BodySmall)
                     }
                 }
             }

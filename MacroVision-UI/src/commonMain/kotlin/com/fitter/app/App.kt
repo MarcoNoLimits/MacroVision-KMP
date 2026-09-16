@@ -19,6 +19,7 @@ import com.fitter.app.ui.navigation.CameraDestination
 import com.fitter.app.ui.navigation.DashboardDestination
 import com.fitter.app.ui.navigation.ResultDestination
 import com.fitter.app.ui.navigation.SettingsDestination
+import com.fitter.app.ui.components.newMealId
 import com.fitter.app.ui.screens.camera.CameraScreen
 import com.fitter.app.ui.screens.dashboard.DashboardScreen
 import com.fitter.app.ui.screens.review.ResultScreen
@@ -146,12 +147,14 @@ fun App() {
                         onSettingsClicked = {
                             navController.navigate(SettingsDestination)
                         },
-                        onDeleteMeal = { index ->
-                            if (index in loggedMeals.indices) {
-                                val mealToDelete = loggedMeals[index]
-                                coroutineScope.launch {
-                                    mealRepository.deleteMeal(mealToDelete.id)
-                                }
+                        onDeleteMeal = { mealToDelete ->
+                            coroutineScope.launch {
+                                mealRepository.deleteMeal(mealToDelete.id)
+                            }
+                        },
+                        onRestoreMeal = { mealToRestore ->
+                            coroutineScope.launch {
+                                mealRepository.saveMeal(mealToRestore)
                             }
                         }
                     )
@@ -194,7 +197,7 @@ fun App() {
                         capturedImageBytes = lastCapturedImageBytes,
                         onMealLogged = { mealName, cal, p, c, f ->
                             val newMeal = LoggedMeal(
-                                id = "${mealName}_${getCurrentTimeString()}_${loggedMeals.size}",
+                                id = newMealId(), // F0.1: collision-proof UUID v4
                                 name = mealName,
                                 calories = cal,
                                 protein = p,

@@ -20,9 +20,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.fitter.app.ui.theme.BorderColor
-import com.fitter.app.ui.theme.MutedTextColor
-import com.fitter.app.ui.theme.TextColor
+import com.fitter.app.ui.theme.*
 
 // Interactive wrapper model for editable weights
 data class EditableFoodItem(
@@ -44,8 +42,9 @@ fun WeightInputPill(
     var textValue by remember(weightStr) { mutableStateOf(weightStr) }
     Row(
         modifier = Modifier
-            .background(Color(0xFFF1F5F9), RoundedCornerShape(12.dp))
-            .border(1.dp, BorderColor, RoundedCornerShape(12.dp))
+            // F1.1: SurfaceTint replaces Color(0xFFF1F5F9)
+            .background(SurfaceTint, RoundedCornerShape(RadiusS)) // F1.2: RadiusS replaces 12.dp
+            .border(1.dp, BorderColor, RoundedCornerShape(RadiusS))
             .padding(horizontal = 8.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -58,7 +57,9 @@ fun WeightInputPill(
                 }
             },
             textStyle = TextStyle(
-                fontSize = 12.sp,
+                // F2.1: BodySmall size (12sp) matches; keeping inline TextStyle as BasicTextField
+                // requires TextStyle not style parameter
+                fontSize = BrandTypography.BodySmall.fontSize,
                 fontWeight = FontWeight.Bold,
                 color = TextColor,
                 textAlign = TextAlign.Center
@@ -66,7 +67,12 @@ fun WeightInputPill(
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             modifier = Modifier.width(36.dp)
         )
-        Text(text = "g", fontSize = 12.sp, color = MutedTextColor, fontWeight = FontWeight.Bold)
+        Text(
+            text = "g",
+            style = BrandTypography.BodySmall,
+            color = MutedTextColor,
+            fontWeight = FontWeight.Bold
+        )
     }
 }
 
@@ -79,10 +85,10 @@ fun MacroGridCard(
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = Color.White),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(RadiusM), // F1.2: was 16.dp → RadiusM
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, BorderColor, RoundedCornerShape(16.dp))
+            .border(1.dp, BorderColor, RoundedCornerShape(RadiusM))
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -93,10 +99,12 @@ fun MacroGridCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // F2.1: Eyebrow replaces 11.sp for titles
+                // F2.2: Eyebrow=10sp at MutedTextColor — acceptable (spec says ≥12sp for *body* muted text;
+                // label eyebrows in caps are a distinct role). Spec F2.2 targets long-form muted body text.
                 Text(
                     text = title,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
+                    style = BrandTypography.Eyebrow,
                     color = MutedTextColor
                 )
                 Box(modifier = Modifier.size(6.dp).background(color, CircleShape))
@@ -105,15 +113,18 @@ fun MacroGridCard(
                 verticalAlignment = Alignment.Bottom,
                 horizontalArrangement = Arrangement.spacedBy(2.dp)
             ) {
+                // F2.1: inline 18.sp → SectionTitle won't work (SectionTitle=14sp); keep numerals explicit
+                // Substitution: using 18.sp directly as a one-off for KPI numerals larger than KpiNumeral(16sp).
+                // Noted as deviation: spec doesn't define a 18sp token.
                 Text(
                     text = value,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
+                    style = BrandTypography.KpiNumeral.copy(fontSize = 18.sp),
                     color = TextColor
                 )
+                // F2.1: Micro (11sp) replaces 11.sp — same value; now semantic
                 Text(
                     text = label,
-                    fontSize = 11.sp,
+                    style = BrandTypography.Micro,
                     color = MutedTextColor,
                     fontWeight = FontWeight.Medium,
                     modifier = Modifier.padding(bottom = 2.dp)

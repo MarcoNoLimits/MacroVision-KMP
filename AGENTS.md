@@ -39,6 +39,9 @@ This file is the authoritative instruction set for any agent (AI or human) worki
 | 5 | Adaptive banners on secondary tabs only | **DONE** | Isolated to Dashboard & Settings; zero ads on Camera/Review |
 | 6 | Brand-safety ad filtering | **DONE** | Codified blocked/allowed categories in `AdConfig` |
 | 7 | Keep `ScanQuotaManagerTest` green (expanded to 9 tests) | **DONE** | 9/9 passing |
+| 8 | Production Architecture: Secure Serverless Gateway | **TODO** | Edge proxy (Cloudflare/Firebase), API key isolation, Play Integrity/App Check, rate limiting |
+| 9 | Commercial VLM Provider Migration (Pay-As-You-Go) | **TODO** | Upgrade from AI Studio Free Tier to Vertex AI / Gemini 2.0 Flash Pay-as-you-go (zero data training, SLA) |
+| 10 | Fitter Premium Subscription Paywall (RevenueCat) | **TODO** | $4.99/mo or $39.99/yr for ad-free unlimited scans + multi-tier PPP |
 
 ## 5. THE MONETIZATION TASK (Canonical Specification)
 
@@ -94,12 +97,39 @@ When the user has exhausted their free daily quota and attempts another scan:
 - Allow only: Fitness, Food & Beverage, Sports, Technology, Productivity, Mobile Games.
 - Users must never see disturbing/repulsive ads — this is the explicit failure condition.
 
-### 5.7 Definition of Done
+### 5.8 Required Production Architecture: The Secure Serverless Gateway (Task 8 & 9)
+
+1. **Zero Client-Side Secrets**: Never embed paid commercial API keys (Gemini, Vertex AI, OpenRouter) inside the mobile client or `BuildConfig`.
+2. **Edge Proxy Routing**:
+   - `Mobile App (KMP) -> HTTPS POST /v1/analyze-meal -> Edge Gateway (Cloudflare Worker / Firebase) -> Commercial VLM API`.
+   - Protects against key scraping via APK decompilation (`jadx`) or network interception (`mitmproxy`).
+3. **Abuse Prevention & Device Integrity**:
+   - Verify requests with device attestation (Firebase App Check, Google Play Integrity, or Apple App Attest).
+   - Enforce server-side quota tracking to prevent client preference tampering.
+4. **Semantic Response Caching**:
+   - Cache common foods and barcode lookups at the edge to reduce duplicate inference costs to $0.00.
+5. **Commercial VLM Migration**:
+   - Migrate from Google AI Studio Free Tier (15 RPM / 1,500 RPD, model training on user data, zero SLA) to **Google Cloud Vertex AI** or **Gemini 2.0 Flash Pay-As-You-Go** (enterprise SLA, zero data logging, unlimited concurrency).
+
+### 5.9 Recommended Decisions & Next Steps (Task 8, 9, 10)
+
+1. **Model Stack Recommendation**:
+   - **Primary VLM**: **Gemini 2.0 Flash** (lowest cost at ~$0.00017/scan, native 768px spatial plate grounding, <800ms latency, high gross margin).
+   - **Secondary Failover**: **Qwen2.5-VL-72B** (via OpenRouter/Fireworks) as an automated edge fallback if Google has an outage.
+2. **Gateway Deployment**:
+   - Deploy a lightweight TypeScript Cloudflare Worker (100k free req/day) or Firebase Cloud Function with App Check.
+3. **Subscription Engine (Task 10)**:
+   - Integrate **RevenueCat** for Fitter Premium ($4.99/mo or $39.99/yr) offering ad-free unlimited scans, macro export, and personalized calorie planning.
+
+### 5.10 Definition of Done
 
 - [x] All 5 `ScanQuotaManagerTest` tests pass, plus new tests for: Week-1 limit (5), Week-2 limit (3), forced-interstitial trigger on scan #4+ (no dialog).
 - [x] `App.kt` gate logic routes: quota available → process; quota exhausted → `showScanProcessingAd { process }`.
 - [x] No ad units on Camera/Scan composable.
 - [x] App Open ad respects `sessionCount > 3` + 4h cooldown.
+- [ ] Deploy secure serverless gateway proxy (Task 8).
+- [ ] Upgrade VLM pipeline to Vertex AI / Gemini 2.0 Flash Pay-As-You-Go with zero data retention (Task 9).
+- [ ] Integrate RevenueCat subscription paywall for Fitter Premium (Task 10).
 - [ ] Merge via PR with the monetization spec referenced in the description.
 
 ---
