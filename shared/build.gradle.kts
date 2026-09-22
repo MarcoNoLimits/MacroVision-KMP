@@ -28,6 +28,9 @@ kotlin {
             implementation(libs.ktor.client.core)
             implementation(libs.ktor.client.content.negotiation)
             implementation(libs.ktor.serialization.kotlinx.json)
+            api(libs.supabase.auth)
+            api(libs.supabase.postgrest)
+            api(libs.supabase.realtime)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))

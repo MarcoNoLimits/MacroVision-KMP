@@ -92,6 +92,12 @@ object DiagnosticsCrashHook {
         // Persistent sink for errors & fatal events
         if (level == DiagnosticLevel.ERROR || level == DiagnosticLevel.FATAL) {
             persistErrorEntry(entry)
+            com.fitter.shared.telemetry.TelemetryUploader.trackDiagnostic(
+                level = level.name,
+                tag = tag,
+                message = message,
+                details = extractedDetails
+            )
             val storage = storageProvider()
             val currentErrors = storage.getInt(KEY_TOTAL_ERROR_COUNT, 0)
             storage.putInt(KEY_TOTAL_ERROR_COUNT, currentErrors + 1)

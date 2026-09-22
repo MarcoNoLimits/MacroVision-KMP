@@ -111,6 +111,12 @@ object CohortRetentionTracker {
             storage.putInt(KEY_TOTAL_ACTIVE_DAYS, currentTotalDays + 1)
             storage.putString(KEY_LAST_ACTIVE_DATE, dateKey)
 
+            com.fitter.shared.telemetry.TelemetryUploader.trackCohortRetention(
+                dayNumber = daysSinceInstall,
+                totalActiveDays = currentTotalDays + 1,
+                dateKey = dateKey
+            )
+
             // Evaluate cohort intervals
             for (cohort in CohortInterval.entries) {
                 // Exact cohort retention check

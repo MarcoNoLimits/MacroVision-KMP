@@ -106,13 +106,14 @@ configure<com.android.build.api.dsl.ApplicationExtension> {
         versionCode = 1
         versionName = "1.0"
         
-        val openRouterApiKey = properties.getProperty("OPENROUTER_API_KEY") ?: ""
-        val geminiApiKey = properties.getProperty("GEMINI_API_KEY") ?: ""
-        val groqApiKey = properties.getProperty("GROQ_API_KEY") ?: ""
-        
-        buildConfigField("String", "OPENROUTER_API_KEY", "\"$openRouterApiKey\"")
-        buildConfigField("String", "GEMINI_API_KEY", "\"$geminiApiKey\"")
-        buildConfigField("String", "GROQ_API_KEY", "\"$groqApiKey\"")
+        val gatewayUrl = properties.getProperty("GATEWAY_URL") ?: "https://fitter-gateway.workers.dev"
+        val supabaseUrl = properties.getProperty("SUPABASE_URL") ?: "https://placeholder-project.supabase.co"
+        val supabaseAnonKey = properties.getProperty("SUPABASE_ANON_KEY") ?: ""
+
+        // ZERO paid VLM keys in the APK — all inference routes through the Cloudflare Worker
+        buildConfigField("String", "GATEWAY_URL", "\"$gatewayUrl\"")
+        buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
+        buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
     }
     
     buildFeatures {

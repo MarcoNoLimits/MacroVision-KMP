@@ -104,6 +104,7 @@ object AdTelemetryManager {
         val appOpenImp = getAppOpenImpressions()
         preferenceWriter(KEY_APP_OPEN_IMPRESSIONS, (appOpenImp + 1).toString())
         incrementTotalImpressions()
+        com.fitter.shared.telemetry.TelemetryUploader.trackAdImpression("APP_OPEN")
     }
 
     fun getAppOpenRequests(): Long =
@@ -144,18 +145,21 @@ object AdTelemetryManager {
         val current = getInterstitialImpressions()
         preferenceWriter(KEY_INTERSTITIAL_IMPRESSIONS, (current + 1).toString())
         incrementTotalImpressions()
+        com.fitter.shared.telemetry.TelemetryUploader.trackAdImpression("INTERSTITIAL")
     }
 
     fun trackRewardedImpression() {
         val current = getRewardedImpressions()
         preferenceWriter(KEY_REWARDED_IMPRESSIONS, (current + 1).toString())
         incrementTotalImpressions()
+        com.fitter.shared.telemetry.TelemetryUploader.trackAdImpression("REWARDED")
     }
 
     fun trackBannerImpression() {
         val current = getBannerImpressions()
         preferenceWriter(KEY_BANNER_IMPRESSIONS, (current + 1).toString())
         incrementTotalImpressions()
+        com.fitter.shared.telemetry.TelemetryUploader.trackAdImpression("BANNER")
     }
 
     fun getInterstitialImpressions(): Long =
@@ -196,6 +200,15 @@ object AdTelemetryManager {
 
         // Notify attached listeners
         revenueListeners.forEach { it.invoke(payload) }
+
+        // Sinks revenue event to Supabase analytics_events table
+        com.fitter.shared.telemetry.TelemetryUploader.trackAdRevenue(
+            adUnitId = payload.adUnitId,
+            networkName = payload.networkName,
+            revenue = payload.revenue,
+            format = payload.format,
+            placement = payload.placement
+        )
     }
 
     fun getTotalRevenueUsd(): Double =

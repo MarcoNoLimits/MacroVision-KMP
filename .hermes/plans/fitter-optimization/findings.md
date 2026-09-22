@@ -30,3 +30,30 @@
 - **Architectural Solution:** Designed clean `MealRepository`, `UserRepository`, and `KeyValueStorage` interfaces in `:shared` with mutex-protected in-memory caching and IO dispatchers.
 - **VLM Pipeline Audit:** Ktor `HttpClient` instances lacked `HttpTimeout` configuration and explicit token generation bounds, allowing hung network calls to stall the failover pipeline. Fixed in specification with 15s request timeout and 1000 max output token limit.
 - **Grounding Optimization:** Added normalized Map indexing to `FoodDatabase.kt` to eliminate linear scans during interactive meal corrections.
+
+## 2026-09-20 — Backend audit (Cypher)
+
+### CRITICAL: No backend exists today
+- Zero server-side code; no Supabase, no auth, no sync, no cloud telemetry. All persistence = SharedPreferences (JSON blobs) — meals stored as one `logged_meals` array, full rewrite per mutation.
+- AGENTS.md §5.8 Tasks 8-10 (Secure Serverless Gateway, Vertex migration, RevenueCat) remain TODO.
+
+### CRITICAL: Paid API keys ship inside client binaries
+- Android: `BuildConfig.OPENROUTER_API_KEY|GEMINI_API_KEY|GROQ_API_KEY` compiled into APK (`PlatformConfig.android.kt:15-17`, wired in `MacroVision-UI/build.gradle.kts:109-115`) — extractable via jadx/strings.
+- iOS: real keys live in ignored `iosApp/Configuration/Config.xcconfig` → baked into `Info.plist`.
+- Repo hygiene itself is clean (`.env`, `Config.xcconfig`, `local.properties` all gitignored; no AIza*/sk-*/gsk-*/Bearer patterns in history).
+
+### HIGH: Gemini API key passed in URL query string
+- `GeminiClient.kt:170,255` — `.../generateContent?key=$apiKey`. Leaks via proxies/logs/caches. Must be `x-goog-api-key` header.
+
+### HIGH: Monetization quota is client-enforced only
+- `ScanQuotaManager`/`AppOpenAdManager` all preference-backed → trivially tampered (reset prefs / clock rollback = unlimited scans). Server-side `consume_scan` RPC needed.
+
+### MEDIUM: Failover is sequential, no backoff/circuit breaker
+- Gemini→OpenRouter→Groq linear; worst case ~45s+ before all-failed. No 429-aware retry. Caching (Task 8.4 semantic cache) unimplemented.
+
+### MEDIUM: Telemetry has no server sink
+- AdTelemetryManager, DiagnosticsCrashHook, CohortRetentionTracker all write to Preferences — data dies with reinstall. Ad units still Google TEST IDs; `isProductionMediationEnabled=false`.
+
+### Verified good
+- Test suite green (9+ quota tests + E2E + telemetry tests), build 7s on JBR 21 (JAVA_HOME must be `C:\Program Files\Android\Android Studio1\jbr`, not the broken jdk-23 env var).
+- HttpTimeout 5s connect/15s request, maxOutputTokens=1000, FoodDatabase O(1) exact match.

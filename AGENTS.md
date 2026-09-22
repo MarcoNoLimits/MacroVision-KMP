@@ -39,9 +39,9 @@ This file is the authoritative instruction set for any agent (AI or human) worki
 | 5 | Adaptive banners on secondary tabs only | **DONE** | Isolated to Dashboard & Settings; zero ads on Camera/Review |
 | 6 | Brand-safety ad filtering | **DONE** | Codified blocked/allowed categories in `AdConfig` |
 | 7 | Keep `ScanQuotaManagerTest` green (expanded to 9 tests) | **DONE** | 9/9 passing |
-| 8 | Production Architecture: Secure Serverless Gateway | **TODO** | Edge proxy (Cloudflare/Firebase), API key isolation, Play Integrity/App Check, rate limiting |
-| 9 | Commercial VLM Provider Migration (Pay-As-You-Go) | **TODO** | Upgrade from AI Studio Free Tier to Vertex AI / Gemini 2.0 Flash Pay-as-you-go (zero data training, SLA) |
-| 10 | Fitter Premium Subscription Paywall (RevenueCat) | **TODO** | $4.99/mo or $39.99/yr for ad-free unlimited scans + multi-tier PPP |
+| 8 | Production Architecture: Secure Serverless Gateway | **DONE** | Edge proxy (Cloudflare Worker), KV semantic cache, rate limit, kill switch, API key isolation |
+| 9 | Commercial VLM Provider Migration (Pay-As-You-Go) | **DONE** | Gemini 2.0 Flash primary with x-goog-api-key header isolation, Qwen/Groq automated edge failover |
+| 10 | Fitter Premium Subscription Paywall (RevenueCat) | **DONE** | $4.99/mo & $39.99/yr plans, entitlement gates ad flow + grants unlimited scans |
 
 ## 5. THE MONETIZATION TASK (Canonical Specification)
 
@@ -127,9 +127,9 @@ When the user has exhausted their free daily quota and attempts another scan:
 - [x] `App.kt` gate logic routes: quota available → process; quota exhausted → `showScanProcessingAd { process }`.
 - [x] No ad units on Camera/Scan composable.
 - [x] App Open ad respects `sessionCount > 3` + 4h cooldown.
-- [ ] Deploy secure serverless gateway proxy (Task 8).
-- [ ] Upgrade VLM pipeline to Vertex AI / Gemini 2.0 Flash Pay-As-You-Go with zero data retention (Task 9).
-- [ ] Integrate RevenueCat subscription paywall for Fitter Premium (Task 10).
+- [x] Deploy secure serverless gateway proxy (Task 8).
+- [x] Upgrade VLM pipeline to Vertex AI / Gemini 2.0 Flash Pay-As-You-Go with zero data retention (Task 9).
+- [x] Integrate RevenueCat subscription paywall for Fitter Premium (Task 10).
 - [ ] Merge via PR with the monetization spec referenced in the description.
 
 ---

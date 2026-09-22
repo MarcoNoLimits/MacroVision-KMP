@@ -1,8 +1,11 @@
 package com.fitter.app
 
-expect val openRouterApiKey: String
-expect val geminiApiKey: String
-expect val groqApiKey: String
+// Gateway URL (Cloudflare Worker — no VLM keys here, only the gateway endpoint)
+expect val gatewayUrl: String
+
+// Supabase project credentials (anon key is safe in the app; service_role is NEVER here)
+expect val supabaseUrl: String
+expect val supabaseAnonKey: String
 
 expect fun savePreference(key: String, value: String)
 expect fun loadPreference(key: String, defaultValue: String): String

@@ -52,3 +52,12 @@
 - **Result:** `BUILD SUCCESSFUL in 18s`, all 49 tasks passing across `:shared` and `:MacroVision-UI`.
 - **Verified:** Yes — exit code 0.
 
+
+## 2026-09-20 — Backend audit session (Cypher)
+
+- **Action:** Full backend audit of C:\GitHub\Fitter @ 39982f9 (working tree clean).
+- **Files read:** All 5 Ktor clients (OpenRouter/Gemini/Groq/Failover/FoodDatabase), both repos (LocalMeal/LocalUser), KeyValueStorage + PreferenceKeyValueStorage, PlatformConfig (common/android), ScanQuotaManager+AppOpenAdManager (in AdManager.kt), AndroidAdManager, App.kt gate refs, telemetry (3 files), AGENTS.md, OPTIMIZATION_PLAN.md, both plan docs.
+- **Verification:** `./gradlew :MacroVision-UI:testDebugUnitTest` with `JAVA_HOME=C:\Program Files\Android\Android Studio1\jbr` → **BUILD SUCCESSFUL in 7s** (44 tasks, test task green). First attempt failed on the stale jdk-23 JAVA_HOME env var — documented.
+- **Secret scan:** `git grep` for `AIza{20,}`/`sk-{20,}`/`gsk-{20,}`/`Bearer` in tracked files → 0 hits. `.env` + `iosApp/Configuration/Config.xcconfig` confirmed gitignored (real iOS keys present on disk but NOT in repo).
+- **Output:** `C:\Users\ahmed\Documents\Hermes-Workspace\Fitter\BACKEND-AUDIT.md` (9,194 bytes; full evidence table + P0–P3 remediation path).
+- **Verified:** yes — all audit claims file:line-referenced; build output real.

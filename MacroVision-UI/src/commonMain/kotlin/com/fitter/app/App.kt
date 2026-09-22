@@ -14,7 +14,6 @@ import com.fitter.app.ads.AppOpenAdManager
 import com.fitter.app.ads.ScanQuotaManager
 import com.fitter.app.data.PreferenceKeyValueStorage
 import com.fitter.app.telemetry.CohortRetentionTracker
-import com.fitter.app.telemetry.DiagnosticsCrashHook
 import com.fitter.app.ui.navigation.CameraDestination
 import com.fitter.app.ui.navigation.DashboardDestination
 import com.fitter.app.ui.navigation.ResultDestination
@@ -26,7 +25,9 @@ import com.fitter.app.ui.screens.review.ResultScreen
 import com.fitter.app.ui.screens.settings.SettingsScreen
 import com.fitter.app.ui.theme.BgColor
 import com.fitter.app.ui.theme.FitterTheme
-import com.fitter.shared.api.FailoverNutritionClient
+import com.fitter.shared.api.GatewayNutritionClient
+import com.fitter.shared.auth.SupabaseAuthService
+import com.fitter.shared.auth.SupabaseClientFactory
 import com.fitter.shared.data.LocalMealRepository
 import com.fitter.shared.data.LocalUserRepository
 import com.fitter.shared.data.MealRepository
@@ -40,9 +41,35 @@ import kotlinx.serialization.json.Json
 @Composable
 fun App() {
     val coroutineScope = rememberCoroutineScope()
-    val storage = remember { PreferenceKeyValueStorage() }
-    val mealRepository: MealRepository = remember { LocalMealRepository(storage) }
-    val userRepository: UserRepository = remember { LocalUserRepository(storage) }
+    val storage = remember {
+        PreferenceKeyValueStorage().also {
+            com.fitter.shared.subscription.SubscriptionManager.initialize(it)
+        }
+    }
+    val supabaseClient = remember { SupabaseClientFactory.getOrCreate(supabaseUrl, supabaseAnonKey) }
+    val authService = remember {
+        SupabaseAuthService(supabaseUrl, supabaseAnonKey)
+    }
+    val quotaManager = remember {
+        com.fitter.shared.quota.SupabaseQuotaManager(supabaseClient)
+    }
+    val syncEngine = remember {
+        com.fitter.shared.sync.SyncEngine(storage, supabaseClient)
+    }
+    val mealRepository: MealRepository = remember {
+        com.fitter.shared.data.SupabaseMealRepository(
+            LocalMealRepository(storage),
+            syncEngine,
+            supabaseClient
+        )
+    }
+    val userRepository: UserRepository = remember {
+        com.fitter.shared.data.SupabaseUserRepository(
+            LocalUserRepository(storage),
+            syncEngine,
+            supabaseClient
+        )
+    }
 
     var userProfile by remember {
         mutableStateOf(
@@ -85,24 +112,6 @@ fun App() {
             val navController = rememberNavController()
             val adManager = remember { getPlatformAdManager() }
 
-            LaunchedEffect(Unit) {
-                // Wire diagnostic crash hooks to FailoverNutritionClient
-                FailoverNutritionClient.onErrorHook = { provider, error ->
-                    DiagnosticsCrashHook.logVlmError(provider, error.message ?: "Unknown VLM error", error)
-                }
-                FailoverNutritionClient.onFatalHook = { tag, error ->
-                    DiagnosticsCrashHook.recordFatalCrash(tag, error.message ?: "VLM pipeline failed", error)
-                }
-
-                // Record active retention session for cohort tracking
-                CohortRetentionTracker.recordActiveDailySession(selectedDateKey)
-
-                // Session & Ad Lifecycle
-                AppOpenAdManager.incrementSessionCount()
-                adManager.preloadAds()
-                adManager.showAppOpenAdIfEligible()
-            }
-
             var playAdDuringScan by remember {
                 mutableStateOf(loadPreference("play_ad_during_scan", "true").toBoolean())
             }
@@ -111,15 +120,49 @@ fun App() {
                 mutableStateOf(ScanQuotaManager.getRemainingScans(selectedDateKey))
             }
 
-            val openRouterKey = openRouterApiKey
-            val geminiKey = geminiApiKey
-            val groqKey = groqApiKey
-            val isMockMode = (openRouterKey.isBlank() || openRouterKey == "your_openrouter_api_key_here") &&
-                             (geminiKey.isBlank() || geminiKey == "your_gemini_api_key_here") &&
-                             (groqKey.isBlank() || groqKey == "your_groq_api_key_here")
-            val apiClient = remember(openRouterKey, geminiKey, groqKey) {
-                FailoverNutritionClient(openRouterKey, geminiKey, groqKey)
+            LaunchedEffect(Unit) {
+                // ── Step 1: Ensure a valid Supabase anonymous JWT exists BEFORE any server call ──
+                // All boot-side effects are gated on this.
+                val userId = try {
+                    authService.ensureSignedIn()
+                } catch (e: Exception) {
+                    println("Auth boot failed: ${e.message}")
+                    null
+                }
+
+                // Record active retention session for cohort tracking
+                CohortRetentionTracker.recordActiveDailySession(selectedDateKey)
+
+                // ── Step 2: Boot-side effects (only after JWT confirmed) ─────────────────
+                if (userId != null) {
+                    // Supabase Server Quota sync
+                    ScanQuotaManager.remoteQuotaManager = quotaManager
+                    ScanQuotaManager.syncQuotaFromServer(selectedDateKey)
+                    scansRemainingToday = ScanQuotaManager.getRemainingScans(selectedDateKey)
+
+                    // Background sync
+                    (mealRepository as? com.fitter.shared.data.SupabaseMealRepository)?.pullRemote(selectedDateKey)
+                    (userRepository as? com.fitter.shared.data.SupabaseUserRepository)?.pullRemote(selectedDateKey)
+                    syncEngine.flushOutbox()
+                    com.fitter.shared.telemetry.TelemetryUploader.triggerFlush()
+                }
+
+                // Session & Ad Lifecycle
+                AppOpenAdManager.incrementSessionCount()
+                adManager.preloadAds()
+                adManager.showAppOpenAdIfEligible()
             }
+
+            // GatewayNutritionClient — JWT injected from auth service at call time
+            val apiClient = remember {
+                GatewayNutritionClient(
+                    gatewayUrl = gatewayUrl,
+                    jwtProvider = { authService.currentSession()?.accessToken }
+                )
+            }
+            // Client-side mock mode is retired. The Worker controls mock responses via FITTER_ENV=dev.
+            // Keep isMockMode = false so CameraScreen/ResultScreen compile without changes.
+            val isMockMode = false
 
             NavHost(
                 navController = navController,
@@ -168,8 +211,10 @@ fun App() {
                         adManager = adManager,
                         playAdDuringScan = playAdDuringScan || ScanQuotaManager.shouldForceInterstitialAd(selectedDateKey),
                         onScanConsumed = {
-                            ScanQuotaManager.consumeScan(selectedDateKey)
-                            scansRemainingToday = ScanQuotaManager.getRemainingScans(selectedDateKey)
+                            coroutineScope.launch {
+                                ScanQuotaManager.consumeScanServer(selectedDateKey)
+                                scansRemainingToday = ScanQuotaManager.getRemainingScans(selectedDateKey)
+                            }
                         },
                         onPhotoCaptured = { bytes ->
                             lastCapturedImageBytes = bytes

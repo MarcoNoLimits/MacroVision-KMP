@@ -12,9 +12,9 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-actual val openRouterApiKey: String get() = BuildConfig.OPENROUTER_API_KEY
-actual val geminiApiKey: String get() = BuildConfig.GEMINI_API_KEY
-actual val groqApiKey: String get() = BuildConfig.GROQ_API_KEY
+actual val gatewayUrl: String get() = BuildConfig.GATEWAY_URL
+actual val supabaseUrl: String get() = BuildConfig.SUPABASE_URL
+actual val supabaseAnonKey: String get() = BuildConfig.SUPABASE_ANON_KEY
 
 lateinit var appContext: Context
 

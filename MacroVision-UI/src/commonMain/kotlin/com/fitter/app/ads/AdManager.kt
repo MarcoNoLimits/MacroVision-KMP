@@ -3,6 +3,9 @@ package com.fitter.app.ads
 import com.fitter.app.getCurrentEpochMillis
 import com.fitter.app.loadPreference
 import com.fitter.app.savePreference
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /**
  * Standard Google AdMob official test ad unit IDs.
@@ -119,10 +122,13 @@ object ScanQuotaManager {
 
     var currentTimeMillisProvider: () -> Long = { getCurrentEpochMillis() }
 
+    var remoteQuotaManager: com.fitter.shared.quota.SupabaseQuotaManager? = null
+
     fun resetToDefaults() {
         preferenceReader = { key, default -> loadPreference(key, default) }
         preferenceWriter = { key, value -> savePreference(key, value) }
         currentTimeMillisProvider = { getCurrentEpochMillis() }
+        remoteQuotaManager = null
     }
 
     fun getFirstInstallTimestamp(): Long {
@@ -158,6 +164,9 @@ object ScanQuotaManager {
     }
 
     fun getRemainingScans(dateKey: String): Int {
+        if (com.fitter.shared.subscription.SubscriptionManager.isPremiumUser()) {
+            return 999
+        }
         val used = getUsedScans(dateKey)
         val bonus = getBonusScans(dateKey)
         val totalAllowed = getDailyFreeLimit() + bonus
@@ -165,6 +174,9 @@ object ScanQuotaManager {
     }
 
     fun hasQuota(dateKey: String): Boolean {
+        if (com.fitter.shared.subscription.SubscriptionManager.isPremiumUser()) {
+            return true
+        }
         return getRemainingScans(dateKey) > 0
     }
 
@@ -172,8 +184,12 @@ object ScanQuotaManager {
      * Determines if a forced interstitial scan processing ad must be shown.
      * When free/bonus quota is exhausted (hasQuota == false), the scan is NOT blocked,
      * but an interstitial ad MUST be shown before processing.
+     * Fitter Premium subscribers receive unlimited ad-free scans.
      */
     fun shouldForceInterstitialAd(dateKey: String): Boolean {
+        if (com.fitter.shared.subscription.SubscriptionManager.isPremiumUser()) {
+            return false
+        }
         return !hasQuota(dateKey)
     }
 
@@ -182,9 +198,74 @@ object ScanQuotaManager {
         preferenceWriter("quota_used_$dateKey", (currentUsed + 1).toString())
     }
 
+    /**
+     * Consumes one scan:
+     * 1. Calls server RPC (fail-closed).
+     * 2. Returns:
+     *    - `true`  → within allowance; local counter incremented
+     *    - `false` → hard server denial; local counter still incremented (scan counted even if denied)
+     *    - `null`  → network error; local counter incremented; caller shows offline banner
+     *
+     * UI should NOT allow VLM spend on `false`. On `null`, use cached values + offline banner.
+     */
+    suspend fun consumeScanServer(dateKey: String): Boolean? {
+        val remote = remoteQuotaManager
+        if (remote != null) {
+            val result = remote.consumeScan(getDailyFreeLimit())
+            consumeScan(dateKey)  // Always increment local counter
+            return result         // null=offline, false=denied, true=ok
+        }
+        // No remote configured (tests / offline-only mode): use local cache
+        val hadQuota = hasQuota(dateKey)
+        consumeScan(dateKey)
+        return hadQuota
+    }
+
+    /**
+     * Syncs quota from server. On success, reconciles local cache to server snapshot.
+     * On null (offline): keeps cached values and sets [isOffline] = true.
+     * Returns remaining scans, or cached value if offline.
+     */
+    suspend fun syncQuotaFromServer(dateKey: String): Int {
+        val remote = remoteQuotaManager ?: return getRemainingScans(dateKey)
+        val snapshot = remote.fetchQuota(getDailyFreeLimit())
+        return if (snapshot != null) {
+            // Reconcile: server is authoritative; overwrite local cache
+            preferenceWriter("quota_used_$dateKey", snapshot.used.toString())
+            preferenceWriter("quota_bonus_$dateKey", snapshot.bonus.toString())
+            preferenceWriter("quota_offline", "false")
+            snapshot.remaining
+        } else {
+            // Network failure: mark as offline, use cached values
+            preferenceWriter("quota_offline", "true")
+            getRemainingScans(dateKey)
+        }
+    }
+
+    /** Returns true if the last syncQuotaFromServer call failed (offline state). */
+    fun isOffline(): Boolean {
+        return preferenceReader("quota_offline", "false").toBoolean()
+    }
+
     fun addBonusScans(dateKey: String, amount: Int = AdConfig.REWARDED_SCAN_BONUS) {
         val currentBonus = getBonusScans(dateKey)
+        // Optimistic local write
         preferenceWriter("quota_bonus_$dateKey", (currentBonus + amount).toString())
+        val remote = remoteQuotaManager
+        if (remote != null) {
+            CoroutineScope(Dispatchers.Default).launch {
+                val serverBonus = try {
+                    remote.grantBonusScan(amount)
+                } catch (e: Exception) {
+                    println("Failed to sync bonus scan to server: ${e.message}")
+                    null
+                }
+                // Reconcile: if server returned a confirmed value, overwrite local
+                if (serverBonus != null) {
+                    preferenceWriter("quota_bonus_$dateKey", serverBonus.toString())
+                }
+            }
+        }
     }
 }
 

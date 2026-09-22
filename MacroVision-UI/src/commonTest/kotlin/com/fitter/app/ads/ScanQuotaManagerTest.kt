@@ -1,11 +1,15 @@
 package com.fitter.app.ads
 
 import com.fitter.app.telemetry.AdTelemetryManager
+import com.fitter.shared.quota.QuotaSnapshot
+import com.fitter.shared.quota.SupabaseQuotaManager
+import kotlinx.coroutines.runBlocking
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ScanQuotaManagerTest {
@@ -47,6 +51,10 @@ class ScanQuotaManagerTest {
             memoryStore[key] = value
         }
         AdTelemetryManager.currentTimeMillisProvider = { simulatedTimeMillis }
+
+        // TelemetryUploader: inject no-op userIdProvider so trackAdImpression() coroutine
+        // doesn't touch Android platform preferences in JVM unit tests.
+        com.fitter.shared.telemetry.TelemetryUploader.userIdProvider = { "test-user-id" }
     }
 
     @AfterTest
@@ -54,6 +62,8 @@ class ScanQuotaManagerTest {
         ScanQuotaManager.resetToDefaults()
         AppOpenAdManager.resetToDefaults()
         AdTelemetryManager.resetForTesting()
+        com.fitter.shared.subscription.SubscriptionManager.resetForTesting()
+        com.fitter.shared.telemetry.TelemetryUploader.userIdProvider = { null }
         memoryStore.clear()
     }
 
@@ -223,4 +233,107 @@ class ScanQuotaManagerTest {
         simulatedTimeMillis += (1L * 60 * 60 * 1000L + 60000L)
         assertTrue(AppOpenAdManager.canShowAppOpenAd())
     }
+
+    @Test
+    fun testFitterPremiumEntitlementGrantsUnlimitedScansAndSuppressesAds() {
+        // Given a user with exhausted daily quota (Week 2+, 3 used scans)
+        repeat(3) {
+            ScanQuotaManager.consumeScan(testDateToday)
+        }
+        assertEquals(0, ScanQuotaManager.getRemainingScans(testDateToday))
+        assertFalse(ScanQuotaManager.hasQuota(testDateToday))
+        assertTrue(ScanQuotaManager.shouldForceInterstitialAd(testDateToday))
+
+        // When user purchases Fitter Premium ($4.99/mo or $39.99/yr)
+        com.fitter.shared.subscription.SubscriptionManager.setPremiumStatus(true, com.fitter.shared.subscription.SubscriptionManager.PRODUCT_MONTHLY)
+
+        // Then quota is unlimited and all forced ads are completely suppressed
+        assertTrue(com.fitter.shared.subscription.SubscriptionManager.isPremiumUser())
+        assertTrue(ScanQuotaManager.hasQuota(testDateToday))
+        assertFalse(ScanQuotaManager.shouldForceInterstitialAd(testDateToday))
+        assertEquals(999, ScanQuotaManager.getRemainingScans(testDateToday))
+
+        // Even after additional scans, ads remain suppressed
+        ScanQuotaManager.consumeScan(testDateToday)
+        assertTrue(ScanQuotaManager.hasQuota(testDateToday))
+        assertFalse(ScanQuotaManager.shouldForceInterstitialAd(testDateToday))
+
+        // When subscription expires/cancels
+        com.fitter.shared.subscription.SubscriptionManager.setPremiumStatus(false)
+        assertFalse(com.fitter.shared.subscription.SubscriptionManager.isPremiumUser())
+        assertFalse(ScanQuotaManager.hasQuota(testDateToday))
+        assertTrue(ScanQuotaManager.shouldForceInterstitialAd(testDateToday))
+    }
+
+    private class FakeSupabaseQuotaManager(
+        var consumeResult: Boolean? = true,
+        var snapshotResult: QuotaSnapshot? = null,
+        var bonusResult: Int? = 2
+    ) : SupabaseQuotaManager() {
+        override suspend fun consumeScan(allowance: Int): Boolean? = consumeResult
+        override suspend fun fetchQuota(allowance: Int): QuotaSnapshot? = snapshotResult
+        override suspend fun grantBonusScan(amount: Int): Int? = bonusResult
+    }
+
+    @Test
+    fun testOfflineUnknownReturnsNullAndMarksOffline() = runBlocking {
+        val fakeRemote = FakeSupabaseQuotaManager(
+            consumeResult = null,
+            snapshotResult = null
+        )
+        ScanQuotaManager.remoteQuotaManager = fakeRemote
+
+        // 1. consumeScanServer returns null (unknown state) on network error
+        val result = ScanQuotaManager.consumeScanServer(testDateToday)
+        assertNull(result)
+        // Local counter was still incremented (fail-closed counting)
+        assertEquals(1, ScanQuotaManager.getUsedScans(testDateToday))
+
+        // 2. syncQuotaFromServer returns cached value and marks isOffline = true
+        val remaining = ScanQuotaManager.syncQuotaFromServer(testDateToday)
+        assertEquals(2, remaining) // 3 limit - 1 used
+        assertTrue(ScanQuotaManager.isOffline())
+    }
+
+    @Test
+    fun testHardDenialReturnsFalseWhenQuotaExhausted() = runBlocking {
+        val fakeRemote = FakeSupabaseQuotaManager(
+            consumeResult = false
+        )
+        ScanQuotaManager.remoteQuotaManager = fakeRemote
+
+        // consumeScanServer returns false on hard server denial
+        val result = ScanQuotaManager.consumeScanServer(testDateToday)
+        assertEquals(false, result)
+        // Scan was still counted locally
+        assertEquals(1, ScanQuotaManager.getUsedScans(testDateToday))
+    }
+
+    @Test
+    fun testBonusReconciliationOverwritesLocalOvercount() = runBlocking {
+        // Local has stale overcount (e.g. 4 used, 0 bonus)
+        memoryStore["quota_used_$testDateToday"] = "4"
+        memoryStore["quota_bonus_$testDateToday"] = "0"
+        assertEquals(0, ScanQuotaManager.getRemainingScans(testDateToday))
+
+        // Server authoritative snapshot says: 1 used, 2 bonus, 4 remaining (3 limit + 2 bonus - 1 used)
+        val serverSnapshot = QuotaSnapshot(
+            used = 1,
+            bonus = 2,
+            remaining = 4,
+            first_install_date = "2026-09-01T00:00:00Z"
+        )
+        val fakeRemote = FakeSupabaseQuotaManager(
+            snapshotResult = serverSnapshot
+        )
+        ScanQuotaManager.remoteQuotaManager = fakeRemote
+
+        val remaining = ScanQuotaManager.syncQuotaFromServer(testDateToday)
+        assertEquals(4, remaining)
+        // Stale local overcount was overwritten with server truth
+        assertEquals(1, ScanQuotaManager.getUsedScans(testDateToday))
+        assertEquals(2, ScanQuotaManager.getBonusScans(testDateToday))
+        assertFalse(ScanQuotaManager.isOffline())
+    }
 }
+

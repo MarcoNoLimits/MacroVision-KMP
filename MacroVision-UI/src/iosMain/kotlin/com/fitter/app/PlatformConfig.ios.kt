@@ -21,15 +21,15 @@ import platform.CoreGraphics.CGSizeMake
 import platform.posix.memcpy
 
 object PlatformConfig {
-    var openRouterApiKey: String = ""
-    var geminiApiKey: String = ""
-    var groqApiKey: String = ""
+    var gatewayUrl: String = "https://fitter-gateway.workers.dev"
+    var supabaseUrl: String = "https://placeholder-project.supabase.co"
+    var supabaseAnonKey: String = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.anon"
     val adManager = com.fitter.app.ads.IosAdManager()
 }
 
-actual val openRouterApiKey: String get() = PlatformConfig.openRouterApiKey
-actual val geminiApiKey: String get() = PlatformConfig.geminiApiKey
-actual val groqApiKey: String get() = PlatformConfig.groqApiKey
+actual val gatewayUrl: String get() = PlatformConfig.gatewayUrl
+actual val supabaseUrl: String get() = PlatformConfig.supabaseUrl
+actual val supabaseAnonKey: String get() = PlatformConfig.supabaseAnonKey
 
 actual fun savePreference(key: String, value: String) {
     NSUserDefaults.standardUserDefaults.setObject(value, forKey = key)
