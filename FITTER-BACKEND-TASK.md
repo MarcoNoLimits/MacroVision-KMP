@@ -4,7 +4,9 @@
 > **Goal:** Turn Fitter into a fully functioning, independent app with **proper authentication** — no client-side secrets, authenticated gateway calls, server-enforced quotas, account identity, sync, telemetry.
 > **Status:** v2 (auth-first) was implemented by a prior IDE run: Worker JWT auth, server-side quota, key removal, GatewayNutritionClient all landed and **compile green (44/44 tasks) with 69 tests passing**. Remaining: the `consume_scan(p_user_id)` service-role plumbing bug (P1), live-credentials verification, and this doc's **Phase 2b (dedicated `fitter` schema DB)**, which is NOT yet implemented.
 >
-> **v3 additions:** dedicated `fitter` schema database with all tables (Phase 2b), so Supabase holds a properly-scoped schema — never pollute `public`.
+> **v3:** committed `fa29160` — dedicated `fitter` schema applied to HOSTED Supabase + quota bug fixed; verified live (6 tables, RLS, RPCs, smoke test). Full backend foundation is live.
+>
+> **v4 (current):** production incident 2026-09-23 — scan showed "Authentication required" (worker 401, JWT missing at scan time). Phases 9 + 10 added: all image scans route via **OpenRouter**, and the auth chain is hardened (no scan without JWT, auto re-auth + retry, explicit offline mode, build-time required config).
 
 ---
 
@@ -167,6 +169,26 @@
 
 ### Phase 8 — (Defer unless asked) Semantic cache tuning + Vertex AI migration
 
+### Phase 9 — All image scans route via OpenRouter (provider priority)  [P0-PROD]
+> **Why:** production incident 2026-09-23 — user hit "Could not analyze image / Authentication required" mid-scan. Beyond the auth bug (Phase 10), the worker was still trying Gemini FIRST and OpenRouter only as fallback. Product decision: **all `analyze-meal` image scans go through OpenRouter** — one provider, one billing relationship, predictable per-scan cost.
+**Acceptance:** EVERY `/v1/analyze-meal` call with valid JWT is sent to OpenRouter before any other provider; priority is environment-driven, not hardcoded.
+- [x] Worker `executeVlmFailover()`: read `env.VLM_PRIMARY_PROVIDER` (values: `openrouter` default, `gemini`, `groq`, `mock`) and `env.VLM_ALLOW_FALLBACK` (`"true"`/`"false"`, default `"true"`). For `openrouter` primary: call `callOpenRouter()` FIRST for `analyze-meal`; only if it throws AND `VLM_ALLOW_FALLBACK=true` try Gemini → Groq as last resort. Keep `recalculate` (text-only, cheap) on the same ordering for consistency.
+- [x] `requestedModel`/`model_hint` must not bypass primary: worker logs `[Provider] primary=openrouter model=<hint>` and passes the hint through to OpenRouter's `model` param; invalid hint → default `minimax/m2-mini-flash` or whatever the OpenRouter default is — never silently switch providers.
+- [x] wrangler.toml `[vars]`: `VLM_PRIMARY_PROVIDER = "openrouter"`, `VLM_ALLOW_FALLBACK = "true"`; `.env.example` documents both.
+- [x] Worker test (`worker/test/gateway.test.mjs`): (a) with `VLM_PRIMARY_PROVIDER=openrouter` and only GEMINI + OPENROUTER keys set, a valid request hits OpenRouter code path first (spy/order assert); (b) `VLM_ALLOW_FALLBACK=false` → Gemini never called; (c) missing OpenRouter key + fallback allowed → Gemini used.
+- **Verify:** `cd worker && npm test && npx tsc --noEmit`; live curl with JWT → response `X-Provider: openrouter` header (add it) + `X-Cache: MISS`.
+
+### Phase 10 — Auth-chain reliability: no scan without a valid JWT  [P0-PROD]
+> **Why:** the production error. Root cause chain (verified): `App.kt:123-131` boot `ensureSignedIn()` fails → `catch` swallows it → `userId = null` → app continues; `jwtProvider = currentSession()?.accessToken` returns null; `GatewayNutritionClient` maps null JWT → `AnalyzeResult.AuthRequired` → user sees "Authentication required". The app must NEVER reach the camera flow without a JWT, and when it gets a 401 it must re-auth and retry, not dead-end.
+**Acceptance:** a scan with a null/expired JWT results in automatic re-authentication and retry (up to N attempts) before any error reaches the UI; boot never proceeds to the camera without an authenticated session (or an explicit, honest offline state).
+- [x] `App.kt` boot: replace swallow-and-continue with a **gate + queue**: loop `ensureSignedIn()` with bounded backoff (e.g. 3 attempts, 1s/2s/4s); if still failing, enter explicit `OfflineMode` state — camera scan availability is gated on auth (button disabled + "Connecting… / Offline" label), recovery observer re-runs `ensureSignedIn()` when network returns. Log via `DiagnosticsCrashHook` + `TelemetryUploader.trackDiagnostic("auth", ...)`.
+- [x] `GatewayNutritionClient`: on `AnalyzeResult.AuthRequired`, automatically trigger re-auth (`authService.ensureSignedIn()` via injected `reAuthenticator` callback) and **retry the request once**; only if re-auth fails surface `AuthRequired` to the UI. Add bounded retry for transient network (1 retry, idempotent-safe).
+- [x] `CameraScreen`/scan gate: call a single `ensureReadyForScan()` that returns `Ready | AuthPending | Offline | QuotaExhausted`; UI shows exact state instead of "Could not analyze image". Add telemetry event `scan_blocked_reason`.
+- [x] **Remove placeholder-value footgun:** `PlatformConfig.android.kt` / `.ios.kt` / `SupabaseClientFactory.kt` defaults (`"https://placeholder-project.supabase.co"`, `"eyJhbG...VCJ9.e30.anon"`) — replace with build-time REQUIRED values: `build.gradle.kts` fails the build if `SUPABASE_URL`/`SUPABASE_ANON_KEY`/`GATEWAY_URL` are missing or contain `placeholder`. No default that looks real in a release build.
+- [x] Worker stays strict: any request without a valid JWT → 401 with `WWW-Authenticate: Bearer` (already) — but ALSO add `X-Debug-Code: auth_required` so the client can distinguish and re-auth deterministically.
+- **Verify:** new tests — `SupabaseAuthServiceTest` (ensureSignedIn retries, throws after exhaustion), `GatewayNutritionClientTest` (401 → re-auth callback invoked → retry succeeds; re-auth fails → AuthRequired surfaced), `App`-level test for OfflineMode gating; full gate (`./gradlew ... --rerun-tasks`); manual: airplane-mode boot → "Offline" → enable network → auto-recover → scan works.
+
+
 ---
 
 ## 5. Hard rules
@@ -178,7 +200,9 @@
 - **Monetization spec stays:** 5 scans/day W1 → 3/day W2+, forced INTERSTITIAL (never rewarded) on exhaustion, App Open 4h cooldown, banners only on passive screens.
 - **Do not change `MealRepository`/`UserRepository` public interfaces** — swap implementations underneath; keep `E2EJourneyTest` and `ScanQuotaManagerTest` green (extend, don't delete).
 - `JAVA_HOME="C:\Program Files\Android\Android Studio1\jbr"` (jdk-23 env var is broken).
-- **Auth requirement:** do NOT ship a build where a server call can happen before an anonymous JWT exists; gate all boot-side effects on `ensureSignedIn()`.
+- **Auth requirement:** do NOT ship a build where a server call can happen before an anonymous JWT exists; gate all boot-side effects on `ensureSignedIn()`. **No scan without a valid JWT — app re-auths and retries on 401, and offline mode is an explicit UI state, never a silent continue.**
+- **OpenRouter is the production image-scan provider.** All `/v1/analyze-meal` calls route OpenRouter-first (env `VLM_PRIMARY_PROVIDER=openrouter`); fallback only when `VLM_ALLOW_FALLBACK=true`; no silent provider switching in release builds.
+- **No placeholder-looking values in release builds.** `placeholder-project.supabase.co`, `eyJhbG...VCJ9.e30.anon`, `your_*_key_here` → build must FAIL if present.
 
 ---
 

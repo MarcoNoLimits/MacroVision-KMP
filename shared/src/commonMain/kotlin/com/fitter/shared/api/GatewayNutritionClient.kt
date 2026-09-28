@@ -18,6 +18,9 @@ import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
+import io.ktor.client.statement.HttpResponse
+import kotlinx.coroutines.delay
+
 /**
  * Typed result for a meal analysis.
  * Allows the UI ad-gate to branch on quota state without catching exceptions.
@@ -62,15 +65,21 @@ private data class RecalcItem(
  * - Sends `x-device-id` for secondary rate-limit tracking.
  * - Maps 401 → [AnalyzeResult.AuthRequired], 402 → [AnalyzeResult.QuotaExhausted].
  * - Timeouts: connect 5s / request 60s.
+ * - Phase 10: Automatic re-authentication on 401 or missing JWT + retry once before failing.
+ * - Phase 10: 1 bounded network retry for transient transport errors.
  *
  * @param gatewayUrl  e.g. "https://fitter-gateway.workers.dev" (no trailing slash)
  * @param jwtProvider Returns the current Supabase access token, or null if unauthenticated.
  * @param deviceIdProvider Returns a stable device identifier string.
+ * @param reAuthenticator Injected callback to refresh or re-acquire the Supabase session on 401.
+ * @param client Optional custom HttpClient (e.g. for testing with MockEngine).
  */
 class GatewayNutritionClient(
     private val gatewayUrl: String,
     private val jwtProvider: () -> String?,
-    private val deviceIdProvider: () -> String = { "unknown" }
+    private val deviceIdProvider: () -> String = { "unknown" },
+    private val reAuthenticator: (suspend () -> Unit)? = null,
+    client: HttpClient? = null
 ) : NutritionClient {
 
     private val json = Json {
@@ -78,7 +87,7 @@ class GatewayNutritionClient(
         isLenient = true
     }
 
-    private val httpClient = HttpClient {
+    private val httpClient = client ?: HttpClient {
         install(HttpTimeout) {
             connectTimeoutMillis = 5_000
             requestTimeoutMillis = 60_000
@@ -98,7 +107,9 @@ class GatewayNutritionClient(
         return when (val result = analyzeMealImageWithResult(base64Image, plateSizeInches)) {
             is AnalyzeResult.Success -> result.response
             is AnalyzeResult.QuotaExhausted -> throw Exception("Daily scan quota exhausted")
-            is AnalyzeResult.AuthRequired -> throw Exception("Authentication required")
+            // AuthRequired from the server means the Worker actually rejected the token —
+            // surface the real error message so it appears in the diagnostics log.
+            is AnalyzeResult.AuthRequired -> throw Exception("Gateway: authentication rejected by server (HTTP 401)")
             is AnalyzeResult.Failed -> throw Exception(result.message)
         }
     }
@@ -106,18 +117,42 @@ class GatewayNutritionClient(
     override suspend fun recalculateMealNutrition(
         items: List<Pair<String, Int>>
     ): NutritionResponse {
-        val jwt = jwtProvider()
-            ?: throw Exception("No authentication token available")
+        // Try to get a JWT, but do NOT block the request if one isn't available.
+        var jwt = jwtProvider()
+        if (jwt == null && reAuthenticator != null) {
+            try {
+                reAuthenticator.invoke()
+                jwt = jwtProvider()
+            } catch (_: Throwable) {
+                // reAuth failed — proceed without a token; Worker will handle it
+            }
+        }
 
         val requestBody = RecalculateRequest(
             items = items.map { (name, grams) -> RecalcItem(name = name, grams = grams) }
         )
+        val url = "${gatewayUrl.trimEnd('/')}/v1/recalculate"
 
-        val response = httpClient.post("${gatewayUrl.trimEnd('/')}/v1/recalculate") {
-            contentType(ContentType.Application.Json)
-            header("Authorization", "Bearer $jwt")
-            header("x-device-id", deviceIdProvider())
-            setBody(requestBody)
+        suspend fun postRecalc(token: String?): HttpResponse {
+            return httpClient.post(url) {
+                contentType(ContentType.Application.Json)
+                if (token != null) header("Authorization", "Bearer $token")
+                header("x-device-id", deviceIdProvider())
+                setBody(requestBody)
+            }
+        }
+
+        var response = postRecalc(jwt)
+        if (response.status == HttpStatusCode.Unauthorized && reAuthenticator != null) {
+            try {
+                reAuthenticator.invoke()
+                val freshJwt = jwtProvider()
+                if (freshJwt != null) {
+                    response = postRecalc(freshJwt)
+                }
+            } catch (_: Throwable) {
+                // fall through to check status
+            }
         }
 
         if (!response.status.isSuccess()) {
@@ -134,41 +169,11 @@ class GatewayNutritionClient(
         base64Image: String,
         plateSizeInches: Float?
     ): AnalyzeResult {
-        val jwt = jwtProvider()
-            ?: return AnalyzeResult.AuthRequired
-
-        return try {
-            val requestBody = AnalyzeMealRequest(
-                image_base64 = base64Image,
-                plate_size_inches = plateSizeInches,
-                daily_allowance = 3  // default; ScanQuotaManager will pass the real allowance
-            )
-
-            val response = httpClient.post("${gatewayUrl.trimEnd('/')}/v1/analyze-meal") {
-                contentType(ContentType.Application.Json)
-                header("Authorization", "Bearer $jwt")
-                header("x-device-id", deviceIdProvider())
-                setBody(requestBody)
-            }
-
-            when (response.status) {
-                HttpStatusCode.OK -> {
-                    val nutrition = response.body<NutritionResponse>()
-                    AnalyzeResult.Success(nutrition)
-                }
-                HttpStatusCode.Unauthorized -> AnalyzeResult.AuthRequired
-                HttpStatusCode(402, "Payment Required") -> AnalyzeResult.QuotaExhausted
-                else -> {
-                    val body = response.bodyAsText()
-                    AnalyzeResult.Failed(
-                        message = "Gateway error (${response.status.value}): $body",
-                        httpStatus = response.status.value
-                    )
-                }
-            }
-        } catch (e: Exception) {
-            AnalyzeResult.Failed(message = e.message ?: "Network error")
-        }
+        return executeAnalyzeMeal(
+            base64Image = base64Image,
+            plateSizeInches = plateSizeInches,
+            dailyAllowance = 3
+        )
     }
 
     /**
@@ -180,35 +185,105 @@ class GatewayNutritionClient(
         plateSizeInches: Float?,
         dailyAllowance: Int
     ): AnalyzeResult {
-        val jwt = jwtProvider() ?: return AnalyzeResult.AuthRequired
+        return executeAnalyzeMeal(
+            base64Image = base64Image,
+            plateSizeInches = plateSizeInches,
+            dailyAllowance = dailyAllowance.coerceIn(1, 5)
+        )
+    }
 
-        return try {
-            val requestBody = AnalyzeMealRequest(
-                image_base64 = base64Image,
-                plate_size_inches = plateSizeInches,
-                daily_allowance = dailyAllowance.coerceIn(1, 5)
-            )
-
-            val response = httpClient.post("${gatewayUrl.trimEnd('/')}/v1/analyze-meal") {
-                contentType(ContentType.Application.Json)
-                header("Authorization", "Bearer $jwt")
-                header("x-device-id", deviceIdProvider())
-                setBody(requestBody)
+    private suspend fun executeAnalyzeMeal(
+        base64Image: String,
+        plateSizeInches: Float?,
+        dailyAllowance: Int
+    ): AnalyzeResult {
+        // Try to get a JWT, but do NOT block the request if one isn't available.
+        // Auth failure at boot is non-blocking — the Worker falls back to device-ID rate-limiting.
+        var jwt = jwtProvider()
+        if (jwt == null && reAuthenticator != null) {
+            try {
+                reAuthenticator.invoke()
+                jwt = jwtProvider()
+            } catch (_: Throwable) {
+                // reAuth failed — proceed without a token; Worker will handle it
             }
+        }
 
-            when (response.status) {
-                HttpStatusCode.OK -> AnalyzeResult.Success(response.body())
-                HttpStatusCode.Unauthorized -> AnalyzeResult.AuthRequired
-                HttpStatusCode(402, "Payment Required") -> AnalyzeResult.QuotaExhausted
-                else -> AnalyzeResult.Failed(
-                    message = "Gateway error (${response.status.value}): ${response.bodyAsText()}",
+        val requestBody = AnalyzeMealRequest(
+            image_base64 = base64Image,
+            plate_size_inches = plateSizeInches,
+            daily_allowance = dailyAllowance
+        )
+        val url = "${gatewayUrl.trimEnd('/')}/v1/analyze-meal"
+
+        suspend fun postWithNetRetry(token: String?): Pair<HttpResponse?, Exception?> {
+            var lastNetErr: Exception? = null
+            for (attempt in 0..1) {
+                try {
+                    val resp = httpClient.post(url) {
+                        contentType(ContentType.Application.Json)
+                        if (token != null) header("Authorization", "Bearer $token")
+                        header("x-device-id", deviceIdProvider())
+                        setBody(requestBody)
+                    }
+                    return Pair(resp, null)
+                } catch (e: Exception) {
+                    lastNetErr = e
+                    if (attempt == 0) {
+                        delay(500)
+                    }
+                }
+            }
+            return Pair(null, lastNetErr)
+        }
+
+        val (firstResp, netErr) = postWithNetRetry(jwt)
+        if (netErr != null || firstResp == null) {
+            return AnalyzeResult.Failed(message = netErr?.message ?: "Network error")
+        }
+
+        // HTTP 401 from the server → try reAuth once more and retry
+        if (firstResp.status == HttpStatusCode.Unauthorized) {
+            if (reAuthenticator != null) {
+                val reAuthSuccess = try {
+                    reAuthenticator.invoke()
+                    true
+                } catch (_: Throwable) {
+                    false
+                }
+                val freshJwt = jwtProvider()
+                if (reAuthSuccess && freshJwt != null) {
+                    val (retryResp, retryNetErr) = postWithNetRetry(freshJwt)
+                    if (retryNetErr != null || retryResp == null) {
+                        return AnalyzeResult.Failed(message = retryNetErr?.message ?: "Network error on retry")
+                    }
+                    return mapResponse(retryResp)
+                }
+            }
+            return AnalyzeResult.AuthRequired
+        }
+
+        return mapResponse(firstResp)
+    }
+
+    private suspend fun mapResponse(response: HttpResponse): AnalyzeResult {
+        return when (response.status) {
+            HttpStatusCode.OK -> {
+                val nutrition = response.body<NutritionResponse>()
+                AnalyzeResult.Success(nutrition)
+            }
+            HttpStatusCode.Unauthorized -> AnalyzeResult.AuthRequired
+            HttpStatusCode(402, "Payment Required") -> AnalyzeResult.QuotaExhausted
+            else -> {
+                val body = response.bodyAsText()
+                AnalyzeResult.Failed(
+                    message = "Gateway error (${response.status.value}): $body",
                     httpStatus = response.status.value
                 )
             }
-        } catch (e: Exception) {
-            AnalyzeResult.Failed(message = e.message ?: "Network error")
         }
     }
+
 
     /**
      * Fetch premium entitlement state from the Worker (JWT-authenticated).

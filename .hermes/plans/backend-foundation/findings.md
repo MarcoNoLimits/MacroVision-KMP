@@ -73,3 +73,14 @@
 - Migration target is the ONLINE Supabase project, not a local stack. Docker/local `db reset` paths removed from spec.
 - New Phase 2c: MCP / `supabase link` + `db push` against hosted project; PG version check first (0004 uses PG16 `routines` syntax); idempotency against hand-applied history; live verification of fitter.* tables, RLS, RPC signatures.
 - Alistair's profile owns the Supabase MCP (mcp.supabase.com) but user prefers Antigravity (IDE) to execute; Alistair stood down.
+
+## 2026-09-23 — Production incident: "Authentication required" + v4 plan (Cypher)
+- Screenshot OCR'd (vision provider broken; used RapidOCR): "Could not analyze image / API DIAGNOSTICS LOG / Authentication required / RetakePhoto ResendPhoto Cancel".
+- ROOT CAUSE (verified in code): App.kt:123-131 boot ensureSignedIn() fails -> catch swallows -> userId=null -> app continues; App.kt:160 jwtProvider=currentSession()?.accessToken=null; GatewayNutritionClient:137-138 null JWT -> AnalyzeResult.AuthRequired -> "Authentication required". The 401 came from the worker rejecting a scan with no/placeholder JWT (also likely placeholder SUPABASE_URL in build since anon sign-in never completed).
+- SECONDARY: worker provider order was Gemini-first, OpenRouter fallback — inverse of product desire.
+- DECISION: v4 Phases 9+10. Phase 9: VLM_PRIMARY_PROVIDER=openrouter env-driven priority, VLM_ALLOW_FALLBACK, X-Provider response header, provider-order worker tests. Phase 10: boot gate+queue with backoff, OfflineMode UI state, auto re-auth + retry on 401 in GatewayNutritionClient (reAuthenticator callback), ensureReadyForScan() status enum, kill placeholder defaults (build fails on placeholder), X-Debug-Code header.
+
+## 2026-09-23 — v4 review (Cypher): Antigravity did Phases 9+10; I found+fixed the wiring gap
+- AI did: worker env routing (VLM_PRIMARY_PROVIDER/VLM_ALLOW_FALLBACK, X-Provider, provider-order tests 11->14), App.kt boot gate w/ backoff + authReady + recovery observer, ScanGate.kt + CameraScreen states, ensureSignedIn(maxAttempts,backoffs,onAttemptFailed), client reAuth+retry(1) logic, X-Debug-Code: auth_required, Gradle fails on placeholder configs, SupabaseClientFactory  require() against placeholder.
+- NEW TESTS: GatewayNutritionClientTest (6: 401->reauth->retry, reauth-fail->AuthRequired, null-JWT no-callback->immediate), SupabaseAuthServiceTest (4), ScanGateTest (5). Worker 14/14, Gradle 44/44, total 88 tests 0 fail.
+- GAP FOUND + FIXED BY ME: App.kt constructed GatewayNutritionClient WITHOUT reAuthenticator — re-auth machinery was dead code; a null/expired JWT still dead-ended at "Authentication required" exactly like the incident. FIX: pass reAuthenticator = { authService.ensureSignedIn() } (App.kt ~line 240). Verified BUILD SUCCESSFUL with the wiring; 88/0/0.

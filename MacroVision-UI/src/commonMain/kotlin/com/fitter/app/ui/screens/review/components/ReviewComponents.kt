@@ -5,8 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardOptions
+import com.fitter.app.ui.components.FitterWeightField
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Text
@@ -42,30 +41,21 @@ fun WeightInputPill(
     var textValue by remember(weightStr) { mutableStateOf(weightStr) }
     Row(
         modifier = Modifier
-            // F1.1: SurfaceTint replaces Color(0xFFF1F5F9)
-            .background(SurfaceTint, RoundedCornerShape(RadiusS)) // F1.2: RadiusS replaces 12.dp
-            .border(1.dp, BorderColor, RoundedCornerShape(RadiusS))
+            .background(SurfaceTint, RoundedCornerShape(RadiusS))
+            .border(1.dp, InputBorder, RoundedCornerShape(RadiusS))
+            .heightIn(min = 44.dp)
             .padding(horizontal = 8.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        BasicTextField(
+        FitterWeightField(
             value = textValue,
             onValueChange = {
-                if (it.all { char -> char.isDigit() }) {
+                if (it.all { char -> char.isDigit() || char == '.' }) {
                     textValue = it
                     onWeightChanged(it)
                 }
             },
-            textStyle = TextStyle(
-                // F2.1: BodySmall size (12sp) matches; keeping inline TextStyle as BasicTextField
-                // requires TextStyle not style parameter
-                fontSize = BrandTypography.BodySmall.fontSize,
-                fontWeight = FontWeight.Bold,
-                color = TextColor,
-                textAlign = TextAlign.Center
-            ),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            modifier = Modifier.width(36.dp)
+            modifier = Modifier.width(56.dp)
         )
         Text(
             text = "g",

@@ -185,7 +185,7 @@ class AndroidAdManager(
         val adRequest = AdRequest.Builder().build()
         InterstitialAd.load(
             context,
-            AdConfig.ANDROID_TEST_INTERSTITIAL,
+            AdConfig.ANDROID_INTERSTITIAL,
             adRequest,
             object : InterstitialAdLoadCallback() {
                 override fun onAdLoaded(ad: InterstitialAd) {
@@ -212,7 +212,7 @@ class AndroidAdManager(
         val adRequest = AdRequest.Builder().build()
         RewardedAd.load(
             context,
-            AdConfig.ANDROID_TEST_REWARDED,
+            AdConfig.ANDROID_REWARDED,
             adRequest,
             object : RewardedAdLoadCallback() {
                 override fun onAdLoaded(ad: RewardedAd) {
@@ -290,7 +290,7 @@ class AndroidAdManager(
             val request = AdRequest.Builder().build()
             AppOpenAd.load(
                 context,
-                AdConfig.ANDROID_TEST_APP_OPEN,
+                AdConfig.ANDROID_APP_OPEN,
                 request,
                 object : AppOpenAd.AppOpenAdLoadCallback() {
                     override fun onAdLoaded(ad: AppOpenAd) {
@@ -509,9 +509,21 @@ class AndroidAdManager(
                 }
             }
         } else {
-            Log.w(TAG, "Rewarded ad not ready yet. Preloading and dismissing.")
-            preloadAds()
-            onDismissed()
+            // Ad not ready — give user visible feedback and trigger a fresh load.
+            // Do NOT call onDismissed(): leaving the gate open lets the user tap Retry once loaded.
+            Log.w(TAG, "Rewarded ad not ready (NO_FILL or not loaded yet). Triggering reload.")
+            if (activity != null && !activity.isFinishing && !activity.isDestroyed) {
+                activity.runOnUiThread {
+                    android.widget.Toast.makeText(
+                        activity,
+                        "Ad loading… please try again in a moment.",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+            preloadAdMobRewarded()
+            // Do NOT call onDismissed() here — the button that triggered this stays active
+            // so the user can tap again once the preload completes.
         }
     }
 

@@ -8,6 +8,7 @@ val CardBackground = Color(0xFFFFFFFF)  // White
 val TextColor = Color(0xFF0F172A)       // Dark Slate (Slate 900)
 val MutedTextColor = Color(0xFF64748B)  // Muted Slate (Slate 500)
 val BorderColor = Color(0xFFE2E8F0)     // Slate 200
+val InputBorder = Color(0xFFCBD5E1)     // Slate 300 — G1e: resting input border
 
 val PrimaryAccent = Color(0xFF10B981)   // Emerald Green (#10B981)
 val SecondaryAccent = Color(0xFF64748B) // Slate 500

@@ -13,4 +13,10 @@ object CameraDestination
 data class ResultDestination(val responseJson: String)
 
 @Serializable
+object MonetizationDestination
+
+@Serializable
 object SettingsDestination
+
+@Serializable
+object AuthDestination

@@ -106,15 +106,38 @@ configure<com.android.build.api.dsl.ApplicationExtension> {
         versionCode = 1
         versionName = "1.0"
         
-        val gatewayUrl = properties.getProperty("GATEWAY_URL") ?: "https://fitter-gateway.workers.dev"
-        val supabaseUrl = properties.getProperty("SUPABASE_URL") ?: "https://placeholder-project.supabase.co"
+        val gatewayUrl = properties.getProperty("GATEWAY_URL") ?: ""
+        val supabaseUrl = properties.getProperty("SUPABASE_URL") ?: ""
         val supabaseAnonKey = properties.getProperty("SUPABASE_ANON_KEY") ?: ""
+
+        // Phase 10: Fail build if required configs are missing or contain placeholder values
+        val forbiddenPlaceholders = listOf(
+            "placeholder",
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.anon",
+            "your_"
+        )
+
+        val requiredConfigs = listOf(
+            "GATEWAY_URL" to gatewayUrl,
+            "SUPABASE_URL" to supabaseUrl,
+            "SUPABASE_ANON_KEY" to supabaseAnonKey
+        )
+
+        for ((name, value) in requiredConfigs) {
+            if (value.isBlank()) {
+                throw GradleException("Build config '$name' is required but missing or blank. Provide it via local.properties or environment variable.")
+            }
+            if (forbiddenPlaceholders.any { value.contains(it, ignoreCase = true) }) {
+                throw GradleException("Build config '$name' contains forbidden placeholder pattern: '$value'")
+            }
+        }
 
         // ZERO paid VLM keys in the APK — all inference routes through the Cloudflare Worker
         buildConfigField("String", "GATEWAY_URL", "\"$gatewayUrl\"")
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
     }
+
     
     buildFeatures {
         buildConfig = true

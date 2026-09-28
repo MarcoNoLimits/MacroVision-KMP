@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import coil3.compose.AsyncImage
 import com.fitter.app.getCurrentTimeString
+import com.fitter.app.ui.components.FitterTextField
 import com.fitter.app.ui.components.PressableBox
 import com.fitter.app.ui.screens.review.components.EditableFoodItem
 import com.fitter.app.ui.screens.review.components.MacroGridCard
@@ -524,48 +525,54 @@ fun ResultScreen(
                             style = BrandTypography.ScreenTitle,
                             color = TextColor
                         )
-                        OutlinedTextField(
+                        FitterTextField(
                             value = newItemName,
                             onValueChange = { newItemName = it },
-                            label = { Text("Ingredient Name") },
+                            label = "Ingredient Name",
+                            keyboardType = KeyboardType.Text,
                             modifier = Modifier.fillMaxWidth()
                         )
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            OutlinedTextField(
+                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            FitterTextField(
                                 value = newItemWeight,
                                 onValueChange = { newItemWeight = it },
-                                label = { Text("Weight (g)") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                label = "Weight",
+                                unit = "g",
+                                keyboardType = KeyboardType.Number,
                                 modifier = Modifier.weight(1f)
                             )
-                            OutlinedTextField(
+                            FitterTextField(
                                 value = newItemCalories,
                                 onValueChange = { newItemCalories = it },
-                                label = { Text("Calories") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                label = "Calories",
+                                unit = "kcal",
+                                keyboardType = KeyboardType.Number,
                                 modifier = Modifier.weight(1f)
                             )
                         }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(
+                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            FitterTextField(
                                 value = newItemProtein,
                                 onValueChange = { newItemProtein = it },
-                                label = { Text("Protein (g)") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                label = "Protein",
+                                unit = "g",
+                                keyboardType = KeyboardType.Number,
                                 modifier = Modifier.weight(1f)
                             )
-                            OutlinedTextField(
+                            FitterTextField(
                                 value = newItemCarbs,
                                 onValueChange = { newItemCarbs = it },
-                                label = { Text("Carbs (g)") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                label = "Carbs",
+                                unit = "g",
+                                keyboardType = KeyboardType.Number,
                                 modifier = Modifier.weight(1f)
                             )
-                            OutlinedTextField(
+                            FitterTextField(
                                 value = newItemFat,
                                 onValueChange = { newItemFat = it },
-                                label = { Text("Fat (g)") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                label = "Fat",
+                                unit = "g",
+                                keyboardType = KeyboardType.Number,
                                 modifier = Modifier.weight(1f)
                             )
                         }
@@ -738,12 +745,12 @@ fun ResultScreen(
                             style = BrandTypography.ScreenTitle,
                             color = TextColor
                         )
-                        OutlinedTextField(
+                        FitterTextField(
                             value = swapSearchQuery,
                             onValueChange = { swapSearchQuery = it },
-                            label = { Text("Search Food Database") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true
+                            label = "Search Food Database",
+                            keyboardType = KeyboardType.Text,
+                            modifier = Modifier.fillMaxWidth()
                         )
                         Box(modifier = Modifier.height(200.dp).fillMaxWidth()) {
                             val listState = rememberScrollState()
@@ -847,15 +854,15 @@ fun ResultScreen(
                             style = BrandTypography.ScreenTitle,
                             color = TextColor
                         )
-                        OutlinedTextField(
+                        FitterTextField(
                             value = searchQuery,
                             onValueChange = {
                                 searchQuery = it
                                 selectedFoodEntry = null
                             },
-                            label = { Text("Search Food Database") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true
+                            label = "Search Food Database",
+                            keyboardType = KeyboardType.Text,
+                            modifier = Modifier.fillMaxWidth()
                         )
                         selectedFoodEntry?.let { entry ->
                             Box(
@@ -903,13 +910,13 @@ fun ResultScreen(
                                 }
                             }
                         }
-                        OutlinedTextField(
+                        FitterTextField(
                             value = weightStr,
                             onValueChange = { weightStr = it },
-                            label = { Text("Weight (grams)") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true
+                            label = "Weight",
+                            unit = "g",
+                            keyboardType = KeyboardType.Number,
+                            modifier = Modifier.fillMaxWidth()
                         )
                         Row(
                             horizontalArrangement = Arrangement.End,

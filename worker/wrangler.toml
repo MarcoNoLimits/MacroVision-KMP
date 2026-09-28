@@ -12,7 +12,16 @@ preview_id = "fitter_vlm_cache_kv_preview"
 # "dev" → mock responses allowed when VLM keys absent
 # Production: set to "production" (or omit) via wrangler secret or [vars] override
 FITTER_KILL_SWITCH = "false"
-FITTER_ENV = "dev"
+FITTER_ENV = "production"
+
+# Phase 9: VLM provider routing
+# Primary provider for all /v1/analyze-meal calls.
+# Values: "openrouter" (default, production) | "gemini" | "groq" | "mock" (dev only)
+VLM_PRIMARY_PROVIDER = "openrouter"
+
+# Allow automatic fallback to secondary providers when primary fails.
+# Set to "false" to prevent any silent provider switching in release builds.
+VLM_ALLOW_FALLBACK = "true"
 
 # Worker Secrets (set via: wrangler secret put <NAME>)
 # Do NOT put values here — this file is committed to git.
@@ -20,7 +29,8 @@ FITTER_ENV = "dev"
 # Required secrets:
 #   SUPABASE_URL              e.g. https://abcdef.supabase.co
 #   SUPABASE_SERVICE_ROLE_KEY  Supabase service_role JWT (never ships in app)
-#   GEMINI_API_KEY            Google Gemini API key
-#   OPENROUTER_API_KEY        OpenRouter API key (optional, failover)
-#   GROQ_API_KEY              Groq API key (optional, failover)
+#   GEMINI_API_KEY            Google Gemini API key (fallback provider)
+#   OPENROUTER_API_KEY        OpenRouter API key (PRIMARY provider — required in production)
+#   GROQ_API_KEY              Groq API key (last-resort fallback)
 #   REVENUECAT_WEBHOOK_SECRET  RevenueCat webhook signing secret
+

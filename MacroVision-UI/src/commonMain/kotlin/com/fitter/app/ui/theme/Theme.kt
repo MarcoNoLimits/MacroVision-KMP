@@ -31,6 +31,13 @@ object BrandTypography {
         letterSpacing = 1.sp
     )
 
+    /** Card titles / section headers: "BODY PARAMETERS", "FREE DAILY ALLOWANCE", etc. (G4) */
+    val CardTitle = TextStyle(
+        fontSize = 13.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = 1.sp
+    )
+
     /** Three main screen titles converge here: Dashboard "Today", Review "Review Meal", Settings "Goals & Parameters". */
     val ScreenTitle = TextStyle(
         fontSize = 24.sp,

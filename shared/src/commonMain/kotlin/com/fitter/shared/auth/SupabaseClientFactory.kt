@@ -11,22 +11,30 @@ import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.realtime.Realtime
 
 object SupabaseClientFactory {
-    // Default placeholder for local/test environments; overridden at runtime via PlatformConfig
-    const val DEFAULT_SUPABASE_URL = "http://127.0.0.1:54321"
-    const val DEFAULT_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.anon"
+    // Fallback for local unit test environments only; production credentials must be injected at runtime
+    private const val TEST_LOCAL_URL = "http://127.0.0.1:54321"
+    private const val TEST_LOCAL_KEY = "test-anon-key"
 
     @Volatile
     private var instance: SupabaseClient? = null
 
     fun getOrCreate(
-        url: String = DEFAULT_SUPABASE_URL,
-        anonKey: String = DEFAULT_ANON_KEY
+        url: String = TEST_LOCAL_URL,
+        anonKey: String = TEST_LOCAL_KEY
     ): SupabaseClient {
+        require(!url.contains("placeholder", ignoreCase = true)) {
+            "SUPABASE_URL cannot contain placeholder: $url"
+        }
+        require(!anonKey.contains("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.anon")) {
+            "SUPABASE_ANON_KEY cannot use placeholder JWT token"
+        }
+
         return instance ?: synchronized(this) {
             instance ?: createSupabaseClient(
-                supabaseUrl = url.ifBlank { DEFAULT_SUPABASE_URL },
-                supabaseKey = anonKey.ifBlank { DEFAULT_ANON_KEY }
+                supabaseUrl = url.ifBlank { TEST_LOCAL_URL },
+                supabaseKey = anonKey.ifBlank { TEST_LOCAL_KEY }
             ) {
+
                 install(Auth) {
                     sessionManager = try {
                         SettingsSessionManager()

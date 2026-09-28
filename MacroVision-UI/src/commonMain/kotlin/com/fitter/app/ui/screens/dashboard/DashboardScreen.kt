@@ -17,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -58,6 +59,7 @@ fun DashboardScreen(
     onWaterChanged: (Int) -> Unit,
     onScanClicked: () -> Unit,
     onSettingsClicked: () -> Unit,
+    onMonetizationClicked: () -> Unit,
     onDeleteMeal: (LoggedMeal) -> Unit,
     onRestoreMeal: (LoggedMeal) -> Unit
 ) {
@@ -101,6 +103,14 @@ fun DashboardScreen(
 
     Scaffold(
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+        bottomBar = {
+            AdBanner(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(BgColor)
+                    .navigationBarsPadding()
+            )
+        },
         containerColor = Color.Transparent
     ) { paddingValues ->
         Column(
@@ -135,20 +145,39 @@ fun DashboardScreen(
                     )
                 }
 
-                IconButton(
-                    onClick = onSettingsClicked,
-                    modifier = Modifier
-                        .size(44.dp) // F0.3: min 44dp hit area
-                        .shadow(1.dp, CircleShape)
-                        .background(Color.White, CircleShape)
-                        .border(1.dp, BorderColor, CircleShape)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Settings,
-                        contentDescription = "Settings",
-                        tint = TextColor,
-                        modifier = Modifier.size(20.dp)
-                    )
+                Row {
+                    // Ads & Perks - monetization is a first-class surface, NOT buried in Settings.
+                    // Star icon opens the dedicated Ads & Perks screen (quota, rewarded ads, provider).
+                    IconButton(
+                        onClick = onMonetizationClicked,
+                        modifier = Modifier
+                            .size(44.dp) // F0.3: min 44dp hit area
+                            .shadow(1.dp, CircleShape)
+                            .background(Color.White, CircleShape)
+                            .border(1.dp, BorderColor, CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Star,
+                            contentDescription = "Ads & Perks",
+                            tint = TextColor,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    IconButton(
+                        onClick = onSettingsClicked,
+                        modifier = Modifier
+                            .size(44.dp) // F0.3: min 44dp hit area
+                            .shadow(1.dp, CircleShape)
+                            .background(Color.White, CircleShape)
+                            .border(1.dp, BorderColor, CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Settings",
+                            tint = TextColor,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
             }
 
@@ -540,9 +569,6 @@ fun DashboardScreen(
                     }
                 }
             }
-
-            // Adaptive banner on passive tab
-            AdBanner(modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 12.dp))
         }
     }
 }

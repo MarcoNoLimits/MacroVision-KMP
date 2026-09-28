@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import gateway, { consumeScanServerSide } from "../src/index.ts";
+import gateway, { consumeScanServerSide, executeVlmFailover } from "../src/index.ts";
 
 /**
  * In-memory KVNamespace implementation for testing worker endpoints.
@@ -266,3 +266,175 @@ test("consumeScanServerSide sends fitter profile headers, p_user_id, and no fake
   }
 });
 
+// ─── Phase 9: VLM Provider Routing Tests ─────────────────────────────────────
+
+/**
+ * (a) VLM_PRIMARY_PROVIDER=openrouter + GEMINI+OPENROUTER keys set →
+ *     OpenRouter URL is called FIRST before Gemini.
+ */
+test("Phase 9 (a): VLM_PRIMARY_PROVIDER=openrouter calls OpenRouter before Gemini", async () => {
+  const env = createTestEnv({
+    GEMINI_API_KEY: "test-gemini-key",
+    OPENROUTER_API_KEY: "test-openrouter-key",
+    VLM_PRIMARY_PROVIDER: "openrouter",
+    VLM_ALLOW_FALLBACK: "true",
+    FITTER_ENV: "dev",
+  });
+
+  const originalFetch = globalThis.fetch;
+  const calledUrls = [];
+
+  const mockNutritionResponse = JSON.stringify({
+    meal_name: "Test Meal",
+    items: [],
+    totals: { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 },
+    estimation_notes: "test",
+    choices: [{ message: { content: JSON.stringify({
+      meal_name: "Test Meal",
+      items: [],
+      totals: { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 },
+      estimation_notes: "test"
+    }) } }]
+  });
+
+  globalThis.fetch = async (url, options) => {
+    calledUrls.push(url);
+    // Return mock OpenRouter response structure
+    return new Response(JSON.stringify({
+      choices: [{ message: { content: JSON.stringify({
+        meal_name: "Test Meal",
+        items: [{ item: "Test", weight_est_g: 100, calories: 100, protein_g: 5, carbs_g: 10, fat_g: 2, confidence: "high" }],
+        totals: { calories: 100, protein_g: 5, carbs_g: 10, fat_g: 2 },
+        estimation_notes: "test"
+      }) } }]
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  try {
+    const { provider } = await executeVlmFailover(env, "test prompt", undefined, undefined);
+
+    // OpenRouter should be called first (and succeeds → no Gemini call needed)
+    assert.ok(calledUrls.length >= 1, "At least one fetch call should have been made");
+    assert.ok(
+      calledUrls[0].includes("openrouter.ai"),
+      `First URL called should be OpenRouter, got: ${calledUrls[0]}`
+    );
+    assert.equal(provider, "openrouter", "Provider should be openrouter");
+
+    // Gemini should NOT have been called since OpenRouter succeeded
+    const geminiCalls = calledUrls.filter(u => u.includes("googleapis.com"));
+    assert.equal(geminiCalls.length, 0, "Gemini should not be called when OpenRouter succeeds");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+/**
+ * (b) VLM_ALLOW_FALLBACK=false + OpenRouter fails → Gemini NEVER called.
+ */
+test("Phase 9 (b): VLM_ALLOW_FALLBACK=false prevents Gemini from being called on OpenRouter failure", async () => {
+  const env = createTestEnv({
+    GEMINI_API_KEY: "test-gemini-key",
+    OPENROUTER_API_KEY: "test-openrouter-key",
+    VLM_PRIMARY_PROVIDER: "openrouter",
+    VLM_ALLOW_FALLBACK: "false",
+    FITTER_ENV: "dev",
+  });
+
+  const originalFetch = globalThis.fetch;
+  const calledUrls = [];
+
+  globalThis.fetch = async (url, options) => {
+    calledUrls.push(url);
+    if (url.includes("openrouter.ai")) {
+      // OpenRouter fails
+      return new Response(JSON.stringify({ error: "Service unavailable" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    // Gemini would succeed if called (but it must NOT be called)
+    return new Response(JSON.stringify({
+      candidates: [{ content: { parts: [{ text: JSON.stringify({
+        meal_name: "Gemini Meal", items: [], totals: { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 }, estimation_notes: "test"
+      }) }] } }]
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  try {
+    // Should throw because fallback is disabled and primary failed
+    await assert.rejects(
+      async () => executeVlmFailover(env, "test prompt", undefined, undefined),
+      (err) => {
+        assert.ok(
+          err.message.includes("VLM_ALLOW_FALLBACK=false"),
+          `Error should mention VLM_ALLOW_FALLBACK=false, got: ${err.message}`
+        );
+        return true;
+      }
+    );
+
+    // Gemini must never have been called
+    const geminiCalls = calledUrls.filter(u => u.includes("googleapis.com"));
+    assert.equal(geminiCalls.length, 0, "Gemini should never be called when VLM_ALLOW_FALLBACK=false");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+/**
+ * (c) Missing OpenRouter key + VLM_ALLOW_FALLBACK=true → Gemini used as fallback.
+ */
+test("Phase 9 (c): Missing OpenRouter key with fallback=true uses Gemini", async () => {
+  const env = createTestEnv({
+    GEMINI_API_KEY: "test-gemini-key",
+    // OPENROUTER_API_KEY intentionally absent
+    VLM_PRIMARY_PROVIDER: "openrouter",
+    VLM_ALLOW_FALLBACK: "true",
+    FITTER_ENV: "dev",
+  });
+
+  const originalFetch = globalThis.fetch;
+  const calledUrls = [];
+
+  globalThis.fetch = async (url, options) => {
+    calledUrls.push(url);
+    if (url.includes("googleapis.com")) {
+      // Gemini succeeds
+      return new Response(JSON.stringify({
+        candidates: [{ content: { parts: [{ text: JSON.stringify({
+          meal_name: "Gemini Fallback Meal",
+          items: [{ item: "Rice", weight_est_g: 100, calories: 130, protein_g: 2.7, carbs_g: 28, fat_g: 0.3, confidence: "high" }],
+          totals: { calories: 130, protein_g: 2.7, carbs_g: 28, fat_g: 0.3 },
+          estimation_notes: "Gemini fallback"
+        }) }] } }]
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    // Unexpected URL
+    return new Response("Not found", { status: 404 });
+  };
+
+  try {
+    const { provider } = await executeVlmFailover(env, "test prompt", undefined, undefined);
+
+    // OpenRouter should NOT have been fetched (no key → skipped)
+    const openRouterCalls = calledUrls.filter(u => u.includes("openrouter.ai"));
+    assert.equal(openRouterCalls.length, 0, "OpenRouter should not be called when key is missing");
+
+    // Gemini should have been used as fallback
+    const geminiCalls = calledUrls.filter(u => u.includes("googleapis.com"));
+    assert.ok(geminiCalls.length >= 1, "Gemini should be called as fallback");
+    assert.equal(provider, "gemini", "Provider should be gemini (fallback)");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

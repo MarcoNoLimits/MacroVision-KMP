@@ -18,6 +18,9 @@ import androidx.compose.ui.unit.sp
 
 @Composable
 actual fun AdBanner(modifier: Modifier) {
+    if (com.fitter.shared.subscription.SubscriptionManager.isPremiumUser()) {
+        return
+    }
     Box(
         modifier = modifier
             .fillMaxWidth()

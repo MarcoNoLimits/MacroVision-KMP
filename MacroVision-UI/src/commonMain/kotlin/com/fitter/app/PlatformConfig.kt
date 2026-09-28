@@ -1,6 +1,6 @@
 package com.fitter.app
 
-// Gateway URL (Cloudflare Worker — no VLM keys here, only the gateway endpoint)
+// Gateway URL (Supabase Edge Function — VLM keys stored in Supabase Vault, never in the app)
 expect val gatewayUrl: String
 
 // Supabase project credentials (anon key is safe in the app; service_role is NEVER here)
@@ -17,5 +17,7 @@ expect fun getCurrentEpochMillis(): Long
 expect fun getLastSevenDays(): List<Pair<String, String>>
 
 expect fun compressImage(imageBytes: ByteArray): ByteArray
+
+expect val isDebugBuild: Boolean
 
 expect fun getPlatformAdManager(): com.fitter.app.ads.AdManager

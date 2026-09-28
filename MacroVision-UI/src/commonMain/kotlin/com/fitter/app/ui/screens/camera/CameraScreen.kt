@@ -34,6 +34,9 @@ import com.fitter.shared.api.NutritionClient
 import com.fitter.shared.model.NutritionResponse
 import com.fitter.app.telemetry.DiagnosticsCrashHook
 import io.ktor.util.encodeBase64
+import com.fitter.app.ScanReadiness
+import com.fitter.app.getScanBlockedReason
+import com.fitter.shared.telemetry.TelemetryUploader
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -48,9 +51,110 @@ fun CameraScreen(
     onScanConsumed: () -> Unit,
     onPhotoCaptured: (ByteArray) -> Unit,
     onResultObtained: (String) -> Unit,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    scanReadiness: ScanReadiness = ScanReadiness.Ready
 ) {
     val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(scanReadiness) {
+        val reason = getScanBlockedReason(scanReadiness)
+        if (reason != null) {
+            TelemetryUploader.recordEvent(
+                eventType = "scan_blocked_reason",
+                properties = """{"reason":"$reason"}"""
+            )
+        }
+    }
+
+    if (scanReadiness != ScanReadiness.Ready) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(BgColor)
+                .padding(24.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            when (scanReadiness) {
+                is ScanReadiness.AuthPending -> {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        CircularProgressIndicator(color = PrimaryAccent)
+                        Text(
+                            text = "Connecting…",
+                            style = BrandTypography.SectionTitle,
+                            color = TextColor
+                        )
+                        Text(
+                            text = "Securing session before scanning",
+                            style = BrandTypography.BodySmall,
+                            color = MutedTextColor
+                        )
+                    }
+                }
+                is ScanReadiness.Offline -> {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Icon(
+                            Icons.Filled.Warning,
+                            contentDescription = "Offline",
+                            tint = FatColor,
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Text(
+                            text = "Offline Mode",
+                            style = BrandTypography.SectionTitle,
+                            color = TextColor
+                        )
+                        Text(
+                            text = "No connection available. Camera scan is disabled until network is restored.",
+                            style = BrandTypography.BodySmall,
+                            color = MutedTextColor,
+                            textAlign = TextAlign.Center
+                        )
+                        Button(
+                            onClick = onNavigateBack,
+                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryAccent),
+                            shape = RoundedCornerShape(RadiusM)
+                        ) {
+                            Text("Back to Dashboard", color = Color.White)
+                        }
+                    }
+                }
+                is ScanReadiness.QuotaExhausted -> {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Text(
+                            text = "Daily Limit Reached",
+                            style = BrandTypography.SectionTitle,
+                            color = TextColor
+                        )
+                        Text(
+                            text = "You have used all your scans for today.",
+                            style = BrandTypography.BodySmall,
+                            color = MutedTextColor,
+                            textAlign = TextAlign.Center
+                        )
+
+                        Button(
+                            onClick = onNavigateBack,
+                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryAccent),
+                            shape = RoundedCornerShape(RadiusM)
+                        ) {
+                            Text("Back to Dashboard", color = Color.White)
+                        }
+                    }
+                }
+                else -> Unit
+            }
+        }
+        return
+    }
 
     var isAnalyzing by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -59,6 +163,7 @@ fun CameraScreen(
     var isCancelled by remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxSize()) {
+
         if (!isAnalyzing && errorMessage == null) {
             CameraPreview(
                 modifier = Modifier.fillMaxSize(),

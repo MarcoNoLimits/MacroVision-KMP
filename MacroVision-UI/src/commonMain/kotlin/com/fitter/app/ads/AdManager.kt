@@ -8,18 +8,38 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 /**
- * Standard Google AdMob official test ad unit IDs.
- * Replace these with your live AdMob ad unit IDs when ready for production.
+ * Google AdMob PRODUCTION ad unit IDs for Fitter.
+ * Registered in the AdMob console under App "Fitter"
+ * (App ID ca-app-pub-8255091497626517~5945613703).
  */
 object AdConfig {
-    // Android Test Ad Units
+    // Android Official Google Test Ad Units (enforced in debug builds to avoid NO_FILL & Invalid Traffic)
     const val ANDROID_TEST_APP_ID = "ca-app-pub-3940256099942544~3347511713"
     const val ANDROID_TEST_BANNER = "ca-app-pub-3940256099942544/6300978111"
     const val ANDROID_TEST_INTERSTITIAL = "ca-app-pub-3940256099942544/1033173712"
     const val ANDROID_TEST_REWARDED = "ca-app-pub-3940256099942544/5224354917"
     const val ANDROID_TEST_APP_OPEN = "ca-app-pub-3940256099942544/9257390401"
 
-    // iOS Test Ad Units
+    // Android Production Ad Units (Fitter — App ID ca-app-pub-8255091497626517~5945613703)
+    const val ANDROID_APP_ID = "ca-app-pub-8255091497626517~5945613703"
+    const val ANDROID_PROD_BANNER = "ca-app-pub-8255091497626517/2588822623"
+    const val ANDROID_PROD_INTERSTITIAL = "ca-app-pub-8255091497626517/3343676102"
+    const val ANDROID_PROD_REWARDED = "ca-app-pub-8255091497626517/2201061388"
+    const val ANDROID_PROD_APP_OPEN = "ca-app-pub-8255091497626517/9637446708"
+
+    val ANDROID_BANNER: String
+        get() = if (com.fitter.app.isDebugBuild) ANDROID_TEST_BANNER else ANDROID_PROD_BANNER
+
+    val ANDROID_INTERSTITIAL: String
+        get() = if (com.fitter.app.isDebugBuild) ANDROID_TEST_INTERSTITIAL else ANDROID_PROD_INTERSTITIAL
+
+    val ANDROID_REWARDED: String
+        get() = if (com.fitter.app.isDebugBuild) ANDROID_TEST_REWARDED else ANDROID_PROD_REWARDED
+
+    val ANDROID_APP_OPEN: String
+        get() = if (com.fitter.app.isDebugBuild) ANDROID_TEST_APP_OPEN else ANDROID_PROD_APP_OPEN
+
+    // iOS Test Ad Units (still using Google's official test IDs — replace when iOS ships)
     const val IOS_TEST_APP_ID = "ca-app-pub-3940256099942544~1458002511"
     const val IOS_TEST_BANNER = "ca-app-pub-3940256099942544/2934735716"
     const val IOS_TEST_INTERSTITIAL = "ca-app-pub-3940256099942544/4411468910"

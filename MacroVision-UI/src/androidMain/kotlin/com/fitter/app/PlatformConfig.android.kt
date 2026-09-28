@@ -15,6 +15,7 @@ import java.util.Locale
 actual val gatewayUrl: String get() = BuildConfig.GATEWAY_URL
 actual val supabaseUrl: String get() = BuildConfig.SUPABASE_URL
 actual val supabaseAnonKey: String get() = BuildConfig.SUPABASE_ANON_KEY
+actual val isDebugBuild: Boolean get() = BuildConfig.DEBUG
 
 lateinit var appContext: Context
 

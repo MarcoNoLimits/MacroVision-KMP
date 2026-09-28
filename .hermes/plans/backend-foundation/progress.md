@@ -247,3 +247,85 @@ Last Updated: 2026-09-22
 - Worker: `npm test` in `worker/` → 11/11 tests pass in 232ms ✅
 - Worker: `npx tsc --noEmit` in `worker/` → exit 0 ✅
 
+
+## 2026-09-22 — Cypher independent verification of commit fa29160
+- Commit present: fa29160 "Add secure gateway and Supabase backend foundation" (clean tree).
+- Re-ran worker: npm test -> 11/11 pass (gateway.test.mjs, committed).
+- Re-ran Gradle gate referenced in log; 44/44 tasks ok recorded by run.
+- Live evidence in log cross-checks migrations: 6 fitter tables RLS-on, 3 RPCs + public wrappers, anon zero grants, smoke test (test user created/consumed/cleaned) — consistent with 0003/0004 as committed.
+- Secret scan on fa29160: 0 real keys (only truncated placeholder "eyJhbG...VCJ9.e30.anon" in PlatformConfig.ios.kt + SupabaseClientFactory.kt; helper scripts read token from Windows cred store, no literal secret).
+- Project ref in migrate.mjs: mpsqdaptkkasjoepamwl (URL-safe, not a secret).
+
+## 2026-09-23 — v4 spec (Phases 9+10) authored (Cypher)
+- FITTER-BACKEND-TASK.md: added Phase 9 (OpenRouter-primary provider routing) + Phase 10 (auth-chain reliability; no scan without JWT; auto re-auth+retry; OfflineMode; build-time required config). Hard rules + status updated. Awaiting Antigravity execution.
+
+## 2026-09-25 — Phase 9 & Phase 10 Implementation & Verification (Antigravity)
+
+### Phase 9: OpenRouter-Primary Routing & Failover Controls
+- **Worker implementation (`worker/src/index.ts`)**:
+  - `executeVlmFailover()` reads `env.VLM_PRIMARY_PROVIDER` (default `"openrouter"`) and `env.VLM_ALLOW_FALLBACK` (default `"true"`).
+  - OpenRouter is called FIRST on `/v1/analyze-meal` and `/v1/recalculate`.
+  - Secondary fallback sequence (Gemini → Groq) only executes when `VLM_ALLOW_FALLBACK=true`.
+  - If `VLM_ALLOW_FALLBACK=false`, errors from the primary provider fail fast and immediately throw 500 without silent provider hopping.
+  - Responses include `X-Provider` (`"openrouter"`, `"gemini"`, `"groq"`, `"cache"`, or `"mock"`).
+  - Unauthenticated requests return 401 with `WWW-Authenticate: Bearer` and `X-Debug-Code: auth_required`.
+- **Configuration**:
+  - `worker/wrangler.toml`: added `VLM_PRIMARY_PROVIDER = "openrouter"`, `VLM_ALLOW_FALLBACK = "true"`.
+  - `worker/.env.example`: documented both variables.
+- **Worker Unit Tests (`worker/test/gateway.test.mjs`)**:
+  - Test 12: `Phase 9 (a): VLM_PRIMARY_PROVIDER=openrouter calls OpenRouter before Gemini` ✅
+  - Test 13: `Phase 9 (b): VLM_ALLOW_FALLBACK=false prevents Gemini from being called on OpenRouter failure` ✅
+  - Test 14: `Phase 9 (c): Missing OpenRouter key with fallback=true uses Gemini` ✅
+  - Result: 14/14 tests pass, `npx tsc --noEmit` exit 0.
+
+### Phase 10: Auth-Chain Reliability & Footgun Elimination
+- **App Auth Boot Gate (`MacroVision-UI/src/commonMain/kotlin/com/fitter/app/App.kt`)**:
+  - Replaced try/catch swallow with bounded backoff retry (3 attempts: 1s, 2s, 4s).
+  - OfflineMode state introduced when retries exhaust; scan availability is gated on `authReady`.
+  - Recovery observer periodically attempts sign-in restoration and sync re-triggering.
+  - Telemetry diagnostics wired via `DiagnosticsCrashHook` and `TelemetryUploader.trackDiagnostic("auth", ...)`.
+- **Gateway Client Auto Re-auth (`shared/src/commonMain/kotlin/com/fitter/shared/api/GatewayNutritionClient.kt`)**:
+  - Injected `reAuthenticator: (suspend () -> Unit)? = null` callback.
+  - On 401 Unauthorized or null JWT, automatically invokes `reAuthenticator` and retries the request once before failing.
+  - Added bounded transient network retry (1 retry, 500ms delay).
+- **Scan Gate & Camera Screen (`ScanGate.kt`, `CameraScreen.kt`)**:
+  - `ScanGate.kt`: `ScanReadiness` sealed class (`Ready`, `AuthPending`, `Offline`, `QuotaExhausted`) + `ensureReadyForScan()`.
+  - `CameraScreen.kt`: accepts `scanReadiness`; displays exact UI for `AuthPending` ("Connecting…"), `Offline` ("Offline Mode" banner + return button), and `QuotaExhausted`.
+  - Telemetry event `scan_blocked_reason` fired on non-ready entry.
+- **Footgun Elimination**:
+  - `PlatformConfig.ios.kt`: removed placeholder URL and anon key (`"https://placeholder-project.supabase.co"`, `"eyJhbG...VCJ9.e30.anon"`).
+  - `SupabaseClientFactory.kt`: removed `DEFAULT_ANON_KEY` placeholder JWT; added runtime validation rejecting `placeholder` strings or fake tokens.
+  - `MacroVision-UI/build.gradle.kts`: build-time check enforcing that `GATEWAY_URL`, `SUPABASE_URL`, and `SUPABASE_ANON_KEY` are present and non-blank, throwing `GradleException` if placeholder signatures (`placeholder`, `eyJhbG...VCJ9.e30.anon`, `your_`) are detected.
+- **New Unit Tests**:
+  - `MacroVision-UI/src/commonTest/kotlin/com/fitter/app/ScanGateTest.kt` (5 tests) ✅
+  - `shared/src/commonTest/kotlin/com/fitter/shared/auth/SupabaseAuthServiceTest.kt` (4 tests) ✅
+  - `shared/src/commonTest/kotlin/com/fitter/shared/api/GatewayNutritionClientTest.kt` (6 tests) ✅
+
+### Gate Execution Results
+1. Gradle Gate:
+   ```bash
+   $env:JAVA_HOME = 'C:\Program Files\Android\Android Studio1\jbr'; .\gradlew :MacroVision-UI:testDebugUnitTest --rerun-tasks
+   # 44 actionable tasks: 44 executed, BUILD SUCCESSFUL in 22s
+   # MacroVision-UI unit tests: 48 passed, 0 failed, 0 errors
+   ```
+2. Shared Library Unit Tests:
+   ```bash
+   $env:JAVA_HOME = 'C:\Program Files\Android\Android Studio1\jbr'; .\gradlew :shared:testDebugUnitTest --rerun-tasks
+   # 16 actionable tasks: 16 executed, BUILD SUCCESSFUL in 10s
+   # shared unit tests: 40 passed, 0 failed, 0 errors
+   # Total KMP tests: 88 passed, 0 failed, 0 errors
+   ```
+3. Worker Tests & Typecheck:
+   ```bash
+   npm test        # 14 passed, 0 failed
+   npx tsc --noEmit # exit 0
+   ```
+4. Secret & Key Leak Verification:
+   - Untracked `local.properties` and `.env` verified ignored by git.
+   - ZERO paid VLM keys or secrets present in repo or APK build fields.
+
+
+## 2026-09-23 — v4 verification + wiring fix (Cypher)
+- Ran: ./gradlew :MacroVision-UI:testDebugUnitTest --rerun-tasks -> BUILD SUCCESSFUL 44/44 (36s); worker npm test -> 14/14; tsc clean. 88 Kotlin tests / 0 fail / 0 err (GatewayNutritionClientTest 6, SupabaseAuthServiceTest 4, ScanGateTest 5 confirmed).
+- PATCHED App.kt: GatewayNutritionClient now receives reAuthenticator = { authService.ensureSignedIn() } (was omitted -> re-auth dead code).
+- Note: intermediate build failure was transient Windows file-lock (shared bundleLibRuntimeToJarDebug classes.jar in use) resolved by gradlew --stop + rerun. NOT a code issue.

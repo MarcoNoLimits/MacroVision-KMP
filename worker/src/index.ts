@@ -18,6 +18,11 @@ export interface Env {
   KILL_SWITCH?: string;
   // "dev" → mock responses allowed when keys missing; any other value → 500 on missing keys
   FITTER_ENV?: string;
+  // Phase 9: Provider routing
+  // Primary VLM provider: "openrouter" (default) | "gemini" | "groq" | "mock"
+  VLM_PRIMARY_PROVIDER?: string;
+  // Allow fallback to secondary providers when primary fails: "true" (default) | "false"
+  VLM_ALLOW_FALLBACK?: string;
 }
 
 // ─── Data shapes ─────────────────────────────────────────────────────────────
@@ -107,7 +112,17 @@ function jsonResponse(body: unknown, status: number): Response {
 }
 
 function err401(message = "Authentication required"): Response {
-  return jsonResponse({ error: "Unauthorized", message }, 401);
+  return new Response(JSON.stringify({ error: "Unauthorized", message }), {
+    status: 401,
+    headers: {
+      "Content-Type": "application/json",
+      // WWW-Authenticate: Bearer — RFC 6750; X-Debug-Code lets the mobile client
+      // distinguish a real 401 from a proxy error and trigger deterministic re-auth.
+      "WWW-Authenticate": "Bearer",
+      "X-Debug-Code": "auth_required",
+      ...CORS_HEADERS,
+    },
+  });
 }
 
 function err402Quota(): Response {
@@ -397,66 +412,144 @@ async function callGroq(
 }
 
 /**
- * VLM failover: Gemini → OpenRouter → Groq.
- * If no keys configured and FITTER_ENV === "dev" → mock response.
- * If no keys configured and NOT dev → 500 error (never fake data in production).
+ * VLM failover with environment-driven provider priority.
+ *
+ * Phase 9 spec:
+ * - env.VLM_PRIMARY_PROVIDER: "openrouter" (default) | "gemini" | "groq" | "mock"
+ * - env.VLM_ALLOW_FALLBACK:   "true" (default) | "false"
+ *
+ * For "openrouter" primary:
+ *   1. Call callOpenRouter() FIRST for /v1/analyze-meal and /v1/recalculate.
+ *   2. requestedModel/model_hint passes through to OpenRouter's model param.
+ *      Invalid hint → OpenRouter default; never silently switch providers.
+ *   3. If OpenRouter throws AND VLM_ALLOW_FALLBACK=true → try Gemini → Groq.
+ *   4. If OpenRouter key missing AND VLM_ALLOW_FALLBACK=true → skip to Gemini.
+ *   5. If VLM_ALLOW_FALLBACK=false → throw immediately on primary failure.
+ *
+ * Returns { result, provider } where provider is the name that succeeded.
  */
 async function executeVlmFailover(
   env: Env,
   prompt: string,
   base64Image?: string,
   requestedModel?: string
-): Promise<NutritionResponse> {
+): Promise<{ result: NutritionResponse; provider: string }> {
+  const primaryProvider = (env.VLM_PRIMARY_PROVIDER ?? "openrouter").toLowerCase().trim();
+  const allowFallback = (env.VLM_ALLOW_FALLBACK ?? "true").toLowerCase().trim() !== "false";
+
+  console.log(`[Provider] primary=${primaryProvider} model=${requestedModel ?? "default"} fallback=${allowFallback}`);
+
   const errors: string[] = [];
 
-  if (env.GEMINI_API_KEY) {
-    try {
-      return await callGemini(env, prompt, base64Image, requestedModel || "gemini-2.0-flash");
-    } catch (err: any) {
-      console.warn("Gateway Gemini primary failed:", err.message);
-      errors.push(`Gemini: ${err.message}`);
+  // ── Helper: try a named provider ─────────────────────────────────────────────
+  async function tryProvider(name: string): Promise<{ result: NutritionResponse; provider: string } | null> {
+    if (name === "openrouter") {
+      if (!env.OPENROUTER_API_KEY) {
+        // Key missing — not an error of the provider itself, just skip
+        console.warn("[Provider] OpenRouter key missing — skipping");
+        return null;
+      }
+      try {
+        // Pass model hint through to OpenRouter; callOpenRouter uses its own default if undefined
+        const result = await callOpenRouter(env, prompt, base64Image, requestedModel);
+        return { result, provider: "openrouter" };
+      } catch (err: any) {
+        console.warn("[Provider] OpenRouter failed:", err.message);
+        errors.push(`OpenRouter: ${err.message}`);
+        return null;
+      }
     }
+
+    if (name === "gemini") {
+      if (!env.GEMINI_API_KEY) {
+        console.warn("[Provider] Gemini key missing — skipping");
+        return null;
+      }
+      try {
+        // For gemini primary, pass model hint only when the primary itself is gemini.
+        // For gemini fallback, always use the safe default model.
+        const model = primaryProvider === "gemini" && requestedModel ? requestedModel : "gemini-2.0-flash";
+        const result = await callGemini(env, prompt, base64Image, model);
+        return { result, provider: "gemini" };
+      } catch (err: any) {
+        console.warn("[Provider] Gemini failed:", err.message);
+        errors.push(`Gemini: ${err.message}`);
+        return null;
+      }
+    }
+
+    if (name === "groq") {
+      if (!env.GROQ_API_KEY) {
+        console.warn("[Provider] Groq key missing — skipping");
+        return null;
+      }
+      try {
+        const result = await callGroq(env, prompt, base64Image);
+        return { result, provider: "groq" };
+      } catch (err: any) {
+        console.warn("[Provider] Groq failed:", err.message);
+        errors.push(`Groq: ${err.message}`);
+        return null;
+      }
+    }
+
+    return null;
   }
 
-  if (env.OPENROUTER_API_KEY) {
-    try {
-      return await callOpenRouter(env, prompt, base64Image);
-    } catch (err: any) {
-      console.warn("Gateway OpenRouter fallback failed:", err.message);
-      errors.push(`OpenRouter: ${err.message}`);
-    }
-  }
+  // ── Build provider execution order ───────────────────────────────────────────
+  // Primary first; fallback order is the remaining providers.
+  const fallbackOrder: string[] = ["openrouter", "gemini", "groq"].filter((p) => p !== primaryProvider);
 
-  if (env.GROQ_API_KEY) {
-    try {
-      return await callGroq(env, prompt, base64Image);
-    } catch (err: any) {
-      console.warn("Gateway Groq fallback failed:", err.message);
-      errors.push(`Groq: ${err.message}`);
-    }
-  }
-
-  // Mock ONLY in dev mode
-  if (errors.length === 0 || env.FITTER_ENV === "dev") {
+  // ── Try primary ───────────────────────────────────────────────────────────────
+  if (primaryProvider === "mock") {
+    // "mock" primary only allowed in dev mode
     if (env.FITTER_ENV !== "dev") {
-      // Keys were configured but all failed — surface the real error
-      throw new Error(`All VLM providers failed: ${errors.join("; ")}`);
+      throw new Error('VLM_PRIMARY_PROVIDER="mock" requires FITTER_ENV=dev');
     }
+    return { result: devMockResponse(), provider: "mock" };
+  }
+
+  const primaryResult = await tryProvider(primaryProvider);
+  if (primaryResult) return primaryResult;
+
+  // ── Primary failed or key missing ────────────────────────────────────────────
+  if (!allowFallback) {
+    throw new Error(
+      `VLM primary provider "${primaryProvider}" failed and VLM_ALLOW_FALLBACK=false. Errors: ${errors.join("; ")}`
+    );
+  }
+
+  // ── Try fallbacks in order ────────────────────────────────────────────────────
+  for (const fallback of fallbackOrder) {
+    const fallbackResult = await tryProvider(fallback);
+    if (fallbackResult) {
+      console.log(`[Provider] Fell back to ${fallback} after ${primaryProvider} failed`);
+      return fallbackResult;
+    }
+  }
+
+  // ── Mock ONLY in dev mode (last resort when no keys are configured) ───────────
+  if (env.FITTER_ENV === "dev") {
     console.log("[DEV MODE] No VLM keys configured — returning mock response");
-    return {
-      meal_name: "Sample Balanced Meal (Gateway Dev Mock)",
-      items: [
-        { item: "Grilled Chicken Breast", weight_est_g: 150, calories: 248, protein_g: 46.5, carbs_g: 0.0, fat_g: 5.4, confidence: "high" },
-        { item: "Brown Rice", weight_est_g: 150, calories: 168, protein_g: 3.9, carbs_g: 35.7, fat_g: 1.4, confidence: "high" },
-        { item: "Steamed Broccoli", weight_est_g: 100, calories: 35, protein_g: 2.4, carbs_g: 7.2, fat_g: 0.4, confidence: "high" },
-      ],
-      totals: { calories: 451, protein_g: 52.8, carbs_g: 42.9, fat_g: 7.2 },
-      estimation_notes: "Generated by Fitter Gateway (Dev Mock — FITTER_ENV=dev)",
-    };
+    return { result: devMockResponse(), provider: "mock" };
   }
 
   throw new Error(`All VLM providers failed: ${errors.join("; ")}`);
 }
+
+function devMockResponse(): NutritionResponse {
+  return {
+    meal_name: "Sample Balanced Meal (Gateway Dev Mock)",
+    items: [
+      { item: "Grilled Chicken Breast", weight_est_g: 150, calories: 248, protein_g: 46.5, carbs_g: 0.0, fat_g: 5.4, confidence: "high" },
+      { item: "Brown Rice", weight_est_g: 150, calories: 168, protein_g: 3.9, carbs_g: 35.7, fat_g: 1.4, confidence: "high" },
+      { item: "Steamed Broccoli", weight_est_g: 100, calories: 35, protein_g: 2.4, carbs_g: 7.2, fat_g: 0.4, confidence: "high" },
+    ],
+    totals: { calories: 451, protein_g: 52.8, carbs_g: 42.9, fat_g: 7.2 },
+    estimation_notes: "Generated by Fitter Gateway (Dev Mock — FITTER_ENV=dev)",
+  };
+}
+
 
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
@@ -620,13 +713,13 @@ export default {
             console.log(`[Cache HIT] user=${userId} key=${cacheKey}`);
             return new Response(cachedResult, {
               status: 200,
-              headers: { "Content-Type": "application/json", "X-Cache": "HIT", ...CORS_HEADERS },
+              headers: { "Content-Type": "application/json", "X-Cache": "HIT", "X-Provider": "cache", ...CORS_HEADERS },
             });
           }
         }
 
         console.log(`[Cache MISS] user=${userId} key=${cacheKey} allowance=${clientAllowance}`);
-        const result = await executeVlmFailover(env, userPrompt, imageBase64, requestedModel);
+        const { result, provider } = await executeVlmFailover(env, userPrompt, imageBase64, requestedModel);
         const resultJson = JSON.stringify(result);
 
         if (env.VLM_CACHE) {
@@ -635,9 +728,10 @@ export default {
 
         return new Response(resultJson, {
           status: 200,
-          headers: { "Content-Type": "application/json", "X-Cache": "MISS", ...CORS_HEADERS },
+          headers: { "Content-Type": "application/json", "X-Cache": "MISS", "X-Provider": provider, ...CORS_HEADERS },
         });
       }
+
 
       // ── POST /v1/recalculate ──────────────────────────────────────────────────
       if (request.method === "POST" && url.pathname === "/v1/recalculate") {
@@ -662,14 +756,14 @@ export default {
             console.log(`[Cache HIT] recalc user=${userId} key=${cacheKey}`);
             return new Response(cached, {
               status: 200,
-              headers: { "Content-Type": "application/json", "X-Cache": "HIT", ...CORS_HEADERS },
+              headers: { "Content-Type": "application/json", "X-Cache": "HIT", "X-Provider": "cache", ...CORS_HEADERS },
             });
           }
         }
 
         console.log(`[Cache MISS] recalc user=${userId}`);
-        const result = await executeVlmFailover(env, prompt);
-        const resultJson = JSON.stringify(result);
+        const { result: recalcResult, provider: recalcProvider } = await executeVlmFailover(env, prompt);
+        const resultJson = JSON.stringify(recalcResult);
 
         if (env.VLM_CACHE) {
           await env.VLM_CACHE.put(cacheKey, resultJson, { expirationTtl: 2592000 });
@@ -677,7 +771,7 @@ export default {
 
         return new Response(resultJson, {
           status: 200,
-          headers: { "Content-Type": "application/json", "X-Cache": "MISS", ...CORS_HEADERS },
+          headers: { "Content-Type": "application/json", "X-Cache": "MISS", "X-Provider": recalcProvider, ...CORS_HEADERS },
         });
       }
 
@@ -692,4 +786,5 @@ export default {
   },
 };
 
-export { consumeScanServerSide };
+export { consumeScanServerSide, executeVlmFailover };
+

@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
@@ -22,6 +23,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
@@ -53,6 +57,26 @@ actual fun CameraPreview(
         hasCameraPermission = isGranted
         if (!isGranted) {
             onCancel()
+        }
+    }
+
+    // Gallery picker — reads the selected image URI into ByteArray and
+    // feeds it straight into onPhotoCaptured, which runs the existing
+    // compressImage → apiClient.analyzeMealImage pipeline.
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                if (bytes != null) {
+                    onPhotoCaptured(bytes)
+                } else {
+                    Log.w("CameraPreview", "Gallery URI produced null stream: $uri")
+                }
+            } catch (e: Exception) {
+                Log.e("CameraPreview", "Failed to read gallery image: ${e.message}", e)
+            }
         }
     }
 
@@ -123,13 +147,35 @@ actual fun CameraPreview(
             )
         }
 
-        // Capture Button (Bottom Center)
-        Box(
+        // Bottom controls: [Gallery] ── [Shutter] ──
+        Row(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
-                .padding(bottom = 48.dp)
+                .padding(bottom = 48.dp),
+            horizontalArrangement = Arrangement.spacedBy(32.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
+            // Gallery picker button
+            IconButton(
+                onClick = {
+                    galleryLauncher.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    )
+                },
+                modifier = Modifier
+                    .size(56.dp)
+                    .background(Color.Black.copy(alpha = 0.5f), shape = CircleShape)
+            ) {
+                Icon(
+                    imageVector = PhotoIcon,
+                    contentDescription = "Upload from gallery",
+                    tint = Color.White,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+
+            // Shutter button
             Button(
                 onClick = {
                     val tempFile = File.createTempFile("meal_capture", ".jpg", context.cacheDir)
@@ -166,3 +212,34 @@ actual fun CameraPreview(
         }
     }
 }
+
+private val PhotoIcon: ImageVector by lazy {
+    ImageVector.Builder(
+        name = "Filled.Photo",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f
+    ).apply {
+        path(fill = SolidColor(Color.White)) {
+            moveTo(21f, 19f)
+            verticalLineTo(5f)
+            curveTo(21f, 3.9f, 20.1f, 3f, 19f, 3f)
+            horizontalLineTo(5f)
+            curveTo(3.9f, 3f, 3f, 3.9f, 3f, 5f)
+            verticalLineTo(19f)
+            curveTo(3f, 20.1f, 3.9f, 21f, 5f, 21f)
+            horizontalLineTo(19f)
+            curveTo(20.1f, 21f, 21f, 20.1f, 21f, 19f)
+            close()
+            moveTo(8.5f, 13.5f)
+            lineTo(11f, 16.51f)
+            lineTo(14.5f, 12f)
+            lineTo(19f, 18f)
+            horizontalLineTo(5f)
+            lineTo(8.5f, 13.5f)
+            close()
+        }
+    }.build()
+}
+

@@ -335,5 +335,14 @@ class ScanQuotaManagerTest {
         assertEquals(2, ScanQuotaManager.getBonusScans(testDateToday))
         assertFalse(ScanQuotaManager.isOffline())
     }
+
+    @Test
+    fun testDebugBuildRoutesAllFourAdUnitsToGoogleTestIds() {
+        assertTrue(com.fitter.app.isDebugBuild)
+        assertEquals(AdConfig.ANDROID_TEST_BANNER, AdConfig.ANDROID_BANNER)
+        assertEquals(AdConfig.ANDROID_TEST_INTERSTITIAL, AdConfig.ANDROID_INTERSTITIAL)
+        assertEquals(AdConfig.ANDROID_TEST_REWARDED, AdConfig.ANDROID_REWARDED)
+        assertEquals(AdConfig.ANDROID_TEST_APP_OPEN, AdConfig.ANDROID_APP_OPEN)
+    }
 }
 

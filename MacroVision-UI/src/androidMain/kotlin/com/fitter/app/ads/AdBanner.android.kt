@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -20,9 +21,13 @@ import com.google.android.gms.ads.AdView
 
 @Composable
 actual fun AdBanner(modifier: Modifier) {
+    if (com.fitter.shared.subscription.SubscriptionManager.isPremiumUser()) {
+        return
+    }
     Box(
         modifier = modifier
             .fillMaxWidth()
+            .heightIn(min = 50.dp)
             .padding(vertical = 8.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -75,7 +80,7 @@ actual fun AdBanner(modifier: Modifier) {
                 factory = { context ->
                     AdView(context).apply {
                         setAdSize(AdSize.BANNER)
-                        adUnitId = AdConfig.ANDROID_TEST_BANNER
+                        adUnitId = AdConfig.ANDROID_BANNER
                         adListener = object : com.google.android.gms.ads.AdListener() {
                             override fun onAdLoaded() {
                                 com.fitter.app.telemetry.AdTelemetryManager.trackBannerImpression()
