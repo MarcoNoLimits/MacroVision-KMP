@@ -21,3 +21,9 @@ expect fun compressImage(imageBytes: ByteArray): ByteArray
 expect val isDebugBuild: Boolean
 
 expect fun getPlatformAdManager(): com.fitter.app.ads.AdManager
+
+expect fun syncPlatformMealReminders(
+    enabled: Boolean,
+    reminders: List<com.fitter.app.notifications.MealReminder>
+)
+

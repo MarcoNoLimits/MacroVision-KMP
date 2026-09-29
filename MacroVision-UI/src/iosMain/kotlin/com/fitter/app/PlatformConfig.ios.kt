@@ -143,3 +143,45 @@ actual fun compressImage(imageBytes: ByteArray): ByteArray {
 }
 
 actual fun getPlatformAdManager(): com.fitter.app.ads.AdManager = PlatformConfig.adManager
+
+actual fun syncPlatformMealReminders(
+    enabled: Boolean,
+    reminders: List<com.fitter.app.notifications.MealReminder>
+) {
+    val center = platform.UserNotifications.UNUserNotificationCenter.currentNotificationCenter()
+    center.removeAllPendingNotificationRequests()
+    if (!enabled) return
+
+    val active = reminders.filter { it.enabled }
+    if (active.isEmpty()) return
+
+    center.requestAuthorizationWithOptions(
+        options = platform.UserNotifications.UNAuthorizationOptionAlert or
+            platform.UserNotifications.UNAuthorizationOptionSound or
+            platform.UserNotifications.UNAuthorizationOptionBadge
+    ) { granted, _ ->
+        if (!granted) return@requestAuthorizationWithOptions
+        active.forEach { reminder ->
+            val (title, body) = com.fitter.app.notifications.MealReminderManager.getNotificationContent(reminder.label)
+            val content = platform.UserNotifications.UNMutableNotificationContent().apply {
+                setTitle(title)
+                setBody(body)
+            }
+            val dateComponents = platform.Foundation.NSDateComponents().apply {
+                hour = reminder.hour.toLong()
+                minute = reminder.minute.toLong()
+            }
+            val trigger = platform.UserNotifications.UNCalendarNotificationTrigger.triggerWithDateMatchingComponents(
+                dateComponents = dateComponents,
+                repeats = true
+            )
+            val request = platform.UserNotifications.UNNotificationRequest.requestWithIdentifier(
+                identifier = "fitter_meal_${reminder.id}",
+                content = content,
+                trigger = trigger
+            )
+            center.addNotificationRequest(request, withCompletionHandler = null)
+        }
+    }
+}
+

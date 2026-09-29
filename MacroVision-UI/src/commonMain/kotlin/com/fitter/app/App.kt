@@ -196,10 +196,11 @@ fun App() {
                     TelemetryUploader.triggerFlush()
                 }
 
-                // Session & Ad Lifecycle
+                // Session & Ad Lifecycle + Meal Scan Reminder Notifications
                 AppOpenAdManager.incrementSessionCount()
                 adManager.preloadAds()
                 adManager.showAppOpenAdIfEligible()
+                com.fitter.app.notifications.MealReminderManager.syncNotifications()
             }
 
             // ── Recovery observer: when auth goes offline, periodically retry sign-in ─────────
@@ -324,7 +325,12 @@ fun App() {
                         onNavigateBack = {
                             navController.popBackStack()
                         },
-                        scanReadiness = ensureReadyForScan(authReady, scansRemainingToday)
+                        scanReadiness = ensureReadyForScan(authReady, scansRemainingToday),
+                        scansRemaining = scansRemainingToday,
+                        onBonusScansEarned = {
+                            ScanQuotaManager.addBonusScansSuspend(selectedDateKey, 2)
+                            scansRemainingToday = ScanQuotaManager.getRemainingScans(selectedDateKey)
+                        }
                     )
                 }
 

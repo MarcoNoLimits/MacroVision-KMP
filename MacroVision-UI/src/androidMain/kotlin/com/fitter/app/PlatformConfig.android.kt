@@ -141,3 +141,13 @@ private val androidAdManager by lazy {
 }
 
 actual fun getPlatformAdManager(): com.fitter.app.ads.AdManager = androidAdManager
+
+actual fun syncPlatformMealReminders(
+    enabled: Boolean,
+    reminders: List<com.fitter.app.notifications.MealReminder>
+) {
+    if (::appContext.isInitialized) {
+        com.fitter.app.notifications.MealReminderReceiver.syncAlarms(appContext, enabled, reminders)
+    }
+}
+

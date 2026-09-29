@@ -287,6 +287,27 @@ object ScanQuotaManager {
             }
         }
     }
+
+    /**
+     * Suspending variant of [addBonusScans] that awaits server confirmation via [SupabaseQuotaManager.grantBonusScan]
+     * so an immediate follow-up scan sees the updated server-side bonus quota.
+     */
+    suspend fun addBonusScansSuspend(dateKey: String, amount: Int = AdConfig.REWARDED_SCAN_BONUS) {
+        val currentBonus = getBonusScans(dateKey)
+        preferenceWriter("quota_bonus_$dateKey", (currentBonus + amount).toString())
+        val remote = remoteQuotaManager
+        if (remote != null) {
+            val serverBonus = try {
+                remote.grantBonusScan(amount)
+            } catch (e: Exception) {
+                println("Failed to sync bonus scan to server: ${e.message}")
+                null
+            }
+            if (serverBonus != null) {
+                preferenceWriter("quota_bonus_$dateKey", serverBonus.toString())
+            }
+        }
+    }
 }
 
 /**

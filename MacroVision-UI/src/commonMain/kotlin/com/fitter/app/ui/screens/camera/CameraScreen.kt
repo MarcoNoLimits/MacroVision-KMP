@@ -52,7 +52,9 @@ fun CameraScreen(
     onPhotoCaptured: (ByteArray) -> Unit,
     onResultObtained: (String) -> Unit,
     onNavigateBack: () -> Unit,
-    scanReadiness: ScanReadiness = ScanReadiness.Ready
+    scanReadiness: ScanReadiness = ScanReadiness.Ready,
+    scansRemaining: Int = 1,
+    onBonusScansEarned: (suspend () -> Unit)? = null
 ) {
     val coroutineScope = rememberCoroutineScope()
 
@@ -66,7 +68,65 @@ fun CameraScreen(
         }
     }
 
-    if (scanReadiness != ScanReadiness.Ready) {
+    var isAnalyzing by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var currentCapturedBytes by remember { mutableStateOf<ByteArray?>(null) }
+    // F3.3: isCancelled guards the result callback so a cancelled state doesn't later navigate
+    var isCancelled by remember { mutableStateOf(false) }
+
+    val deliverSuccessfulScan: (String) -> Unit = { responseJson ->
+        onScanConsumed()
+        onResultObtained(responseJson)
+    }
+
+    val retryCapturedPhoto: () -> Unit = {
+        val bytes = currentCapturedBytes
+        if (bytes != null) {
+            errorMessage = null
+            isAnalyzing = true
+            isCancelled = false
+            coroutineScope.launch {
+                try {
+                    val responseJson = if (isMockMode) {
+                        delay(2000)
+                        getMockJson()
+                    } else {
+                        val base64 = bytes.encodeBase64()
+                        val response = apiClient.analyzeMealImage(base64, plateSizeInches)
+                        Json.encodeToString(NutritionResponse.serializer(), response)
+                    }
+                    if (!isCancelled) deliverSuccessfulScan(responseJson)
+                } catch (e: Exception) {
+                    val err = e.message ?: "Unknown API Error"
+                    DiagnosticsCrashHook.logVlmError("CameraScreen", err, e)
+                    errorMessage = err
+                    isAnalyzing = false
+                }
+            }
+        }
+    }
+
+    val watchRewardVideoForMoreScans: (Boolean) -> Unit = { autoRetryPhoto ->
+        var rewarded = false
+        adManager.showRewardedScanUnlockAd(
+            onRewarded = {
+                rewarded = true
+                coroutineScope.launch {
+                    onBonusScansEarned?.invoke()
+                    if (autoRetryPhoto && currentCapturedBytes != null) {
+                        retryCapturedPhoto()
+                    }
+                }
+            },
+            onDismissed = {
+                if (!rewarded) {
+                    // User closed ad early; stay on prompt so they can try again or go back
+                }
+            }
+        )
+    }
+
+    if (scanReadiness != ScanReadiness.Ready || (scansRemaining <= 0 && !isAnalyzing && errorMessage == null)) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -74,8 +134,8 @@ fun CameraScreen(
                 .padding(24.dp),
             contentAlignment = Alignment.Center
         ) {
-            when (scanReadiness) {
-                is ScanReadiness.AuthPending -> {
+            when {
+                scanReadiness is ScanReadiness.AuthPending -> {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -93,7 +153,7 @@ fun CameraScreen(
                         )
                     }
                 }
-                is ScanReadiness.Offline -> {
+                scanReadiness is ScanReadiness.Offline -> {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -124,29 +184,58 @@ fun CameraScreen(
                         }
                     }
                 }
-                is ScanReadiness.QuotaExhausted -> {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                scanReadiness is ScanReadiness.QuotaExhausted || scansRemaining <= 0 -> {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = CardBackground),
+                        shape = RoundedCornerShape(RadiusL),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .shadow(4.dp, RoundedCornerShape(RadiusL))
+                            .border(1.dp, BorderColor, RoundedCornerShape(RadiusL))
                     ) {
-                        Text(
-                            text = "Daily Limit Reached",
-                            style = BrandTypography.SectionTitle,
-                            color = TextColor
-                        )
-                        Text(
-                            text = "You have used all your scans for today.",
-                            style = BrandTypography.BodySmall,
-                            color = MutedTextColor,
-                            textAlign = TextAlign.Center
-                        )
-
-                        Button(
-                            onClick = onNavigateBack,
-                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryAccent),
-                            shape = RoundedCornerShape(RadiusM)
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                            modifier = Modifier.padding(24.dp)
                         ) {
-                            Text("Back to Dashboard", color = Color.White)
+                            Text(
+                                text = "Daily Scan Limit Reached",
+                                style = BrandTypography.SectionTitle,
+                                color = TextColor,
+                                textAlign = TextAlign.Center
+                            )
+                            Text(
+                                text = "You've used all your free scans for today. Watch a short reward video to unlock +2 bonus scans right now!",
+                                style = BrandTypography.BodySmall,
+                                color = MutedTextColor,
+                                textAlign = TextAlign.Center
+                            )
+
+                            Button(
+                                onClick = { watchRewardVideoForMoreScans(false) },
+                                colors = ButtonDefaults.buttonColors(containerColor = PrimaryAccent),
+                                shape = RoundedCornerShape(RadiusM),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 48.dp)
+                            ) {
+                                Text(
+                                    text = "Watch Video (+2 Scans)",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            OutlinedButton(
+                                onClick = onNavigateBack,
+                                shape = RoundedCornerShape(RadiusM),
+                                border = BorderStroke(1.dp, BorderColor),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 48.dp)
+                            ) {
+                                Text("Back to Dashboard", color = TextColor)
+                            }
                         }
                     }
                 }
@@ -154,17 +243,6 @@ fun CameraScreen(
             }
         }
         return
-    }
-
-    var isAnalyzing by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-    var currentCapturedBytes by remember { mutableStateOf<ByteArray?>(null) }
-    // F3.3: isCancelled guards the result callback so a cancelled state doesn't later navigate
-    var isCancelled by remember { mutableStateOf(false) }
-
-    val deliverSuccessfulScan: (String) -> Unit = { responseJson ->
-        onScanConsumed()
-        onResultObtained(responseJson)
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -330,32 +408,8 @@ fun CameraScreen(
                         currentCapturedBytes = null
                         isAnalyzing = false
                     },
-                    onResend = if (currentCapturedBytes != null) {
-                        {
-                            errorMessage = null
-                            isAnalyzing = true
-                            isCancelled = false
-                            coroutineScope.launch {
-                                try {
-                                    val bytes = currentCapturedBytes!!
-                                    val responseJson = if (isMockMode) {
-                                        delay(2000)
-                                        getMockJson()
-                                    } else {
-                                        val base64 = bytes.encodeBase64()
-                                        val response = apiClient.analyzeMealImage(base64, plateSizeInches)
-                                        Json.encodeToString(NutritionResponse.serializer(), response)
-                                    }
-                                    if (!isCancelled) deliverSuccessfulScan(responseJson)
-                                } catch (e: Exception) {
-                                    val err = e.message ?: "Unknown API Error"
-                                    DiagnosticsCrashHook.logVlmError("CameraScreen", err, e)
-                                    errorMessage = err
-                                    isAnalyzing = false
-                                }
-                            }
-                        }
-                    } else null,
+                    onResend = if (currentCapturedBytes != null) retryCapturedPhoto else null,
+                    onWatchRewardedAd = { watchRewardVideoForMoreScans(true) },
                     onCancel = {
                         errorMessage = null
                         currentCapturedBytes = null
@@ -376,32 +430,8 @@ fun CameraScreen(
                         currentCapturedBytes = null
                         isAnalyzing = false
                     },
-                    onResend = if (currentCapturedBytes != null) {
-                        {
-                            errorMessage = null
-                            isAnalyzing = true
-                            isCancelled = false
-                            coroutineScope.launch {
-                                try {
-                                    val bytes = currentCapturedBytes!!
-                                    val responseJson = if (isMockMode) {
-                                        delay(2000)
-                                        getMockJson()
-                                    } else {
-                                        val base64 = bytes.encodeBase64()
-                                        val response = apiClient.analyzeMealImage(base64, plateSizeInches)
-                                        Json.encodeToString(NutritionResponse.serializer(), response)
-                                    }
-                                    if (!isCancelled) deliverSuccessfulScan(responseJson)
-                                } catch (e: Exception) {
-                                    val err = e.message ?: "Unknown API Error"
-                                    DiagnosticsCrashHook.logVlmError("CameraScreen", err, e)
-                                    errorMessage = err
-                                    isAnalyzing = false
-                                }
-                            }
-                        }
-                    } else null,
+                    onResend = if (currentCapturedBytes != null) retryCapturedPhoto else null,
+                    onWatchRewardedAd = { watchRewardVideoForMoreScans(true) },
                     onCancel = {
                         errorMessage = null
                         currentCapturedBytes = null
@@ -465,8 +495,11 @@ private fun ErrorCard(
     isMockMode: Boolean,
     onRetake: () -> Unit,
     onResend: (() -> Unit)?,
+    onWatchRewardedAd: (() -> Unit)? = null,
     onCancel: () -> Unit
 ) {
+    val isQuotaError = errorText.contains("quota", ignoreCase = true)
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -479,92 +512,135 @@ private fun ErrorCard(
             shape = RoundedCornerShape(RadiusL), // F1.2
             modifier = Modifier
                 .fillMaxWidth()
-                // F1.1: DangerColor replaces Color(0xFFEF4444)
-                .border(1.dp, DangerColor.copy(alpha = 0.5f), RoundedCornerShape(RadiusL))
+                .border(
+                    1.dp,
+                    if (isQuotaError) BorderColor else DangerColor.copy(alpha = 0.5f),
+                    RoundedCornerShape(RadiusL)
+                )
         ) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 modifier = Modifier.padding(24.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.Warning,
-                    contentDescription = "Error",
-                    tint = DangerColor, // F1.1
-                    modifier = Modifier.size(48.dp)
-                )
-                Text(
-                    text = "Could not analyze image",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = TextColor,
-                    textAlign = TextAlign.Center
-                )
+                if (isQuotaError) {
+                    Text(
+                        text = "Daily Scan Limit Reached",
+                        style = BrandTypography.SectionTitle,
+                        color = TextColor,
+                        textAlign = TextAlign.Center
+                    )
+                    Text(
+                        text = "You've used all your free scans for today. Watch a short reward video to unlock +2 bonus scans and analyze this meal right now!",
+                        style = BrandTypography.BodySmall,
+                        color = MutedTextColor,
+                        textAlign = TextAlign.Center
+                    )
 
-                // Monospace Diagnostics Log Box — F1.1 all raw hex → semantic tokens
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(DangerSoft, RoundedCornerShape(RadiusS)) // F1.1+F1.2
-                        .border(1.dp, DangerBorder, RoundedCornerShape(RadiusS))
-                        .padding(12.dp)
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            text = "API DIAGNOSTICS LOG",
-                            style = BrandTypography.Eyebrow,
-                            color = DangerTextStrong // F1.1
-                        )
-                        Text(
-                            text = if (isMockMode && errorText.contains("placeholder"))
-                                "Mock API Key issue."
-                            else
-                                errorText,
-                            // F2.1: Diagnostics style (11sp monospace) — kept at 11sp per spec exemption
-                            style = BrandTypography.Diagnostics,
-                            color = DangerTextDeep, // F1.1
+                    if (onWatchRewardedAd != null) {
+                        Button(
+                            onClick = onWatchRewardedAd,
+                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryAccent),
+                            shape = RoundedCornerShape(RadiusM),
                             modifier = Modifier
-                                .heightIn(max = 100.dp)
-                                .verticalScroll(rememberScrollState())
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        OutlinedButton(
-                            onClick = onRetake,
-                            modifier = Modifier.weight(1f),
-                            border = BorderStroke(1.dp, BorderColor)
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp)
                         ) {
-                            Text("Retake Photo", color = TextColor, style = BrandTypography.BodySmall)
-                        }
-
-                        if (onResend != null) {
-                            Button(
-                                onClick = onResend,
-                                modifier = Modifier.weight(1f),
-                                colors = ButtonDefaults.buttonColors(containerColor = PrimaryAccent)
-                            ) {
-                                Text("Resend Photo", color = Color.White, style = BrandTypography.BodySmall)
-                            }
+                            Text(
+                                text = "Watch Video (+2 Scans & Analyze)",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
 
-                    // F3.3: Cancel is present in error card
                     OutlinedButton(
                         onClick = onCancel,
                         modifier = Modifier.fillMaxWidth(),
                         border = BorderStroke(1.dp, BorderColor)
                     ) {
-                        Text("Cancel", color = TextColor, style = BrandTypography.BodySmall)
+                        Text("Back to Dashboard", color = TextColor, style = BrandTypography.BodySmall)
+                    }
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = "Error",
+                        tint = DangerColor, // F1.1
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Text(
+                        text = "Could not analyze image",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = TextColor,
+                        textAlign = TextAlign.Center
+                    )
+
+                    // Monospace Diagnostics Log Box — F1.1 all raw hex → semantic tokens
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(DangerSoft, RoundedCornerShape(RadiusS)) // F1.1+F1.2
+                            .border(1.dp, DangerBorder, RoundedCornerShape(RadiusS))
+                            .padding(12.dp)
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                text = "API DIAGNOSTICS LOG",
+                                style = BrandTypography.Eyebrow,
+                                color = DangerTextStrong // F1.1
+                            )
+                            Text(
+                                text = if (isMockMode && errorText.contains("placeholder"))
+                                    "Mock API Key issue."
+                                else
+                                    errorText,
+                                // F2.1: Diagnostics style (11sp monospace) — kept at 11sp per spec exemption
+                                style = BrandTypography.Diagnostics,
+                                color = DangerTextDeep, // F1.1
+                                modifier = Modifier
+                                    .heightIn(max = 100.dp)
+                                    .verticalScroll(rememberScrollState())
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            OutlinedButton(
+                                onClick = onRetake,
+                                modifier = Modifier.weight(1f),
+                                border = BorderStroke(1.dp, BorderColor)
+                            ) {
+                                Text("Retake Photo", color = TextColor, style = BrandTypography.BodySmall)
+                            }
+
+                            if (onResend != null) {
+                                Button(
+                                    onClick = onResend,
+                                    modifier = Modifier.weight(1f),
+                                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryAccent)
+                                ) {
+                                    Text("Resend Photo", color = Color.White, style = BrandTypography.BodySmall)
+                                }
+                            }
+                        }
+
+                        // F3.3: Cancel is present in error card
+                        OutlinedButton(
+                            onClick = onCancel,
+                            modifier = Modifier.fillMaxWidth(),
+                            border = BorderStroke(1.dp, BorderColor)
+                        ) {
+                            Text("Cancel", color = TextColor, style = BrandTypography.BodySmall)
+                        }
                     }
                 }
             }

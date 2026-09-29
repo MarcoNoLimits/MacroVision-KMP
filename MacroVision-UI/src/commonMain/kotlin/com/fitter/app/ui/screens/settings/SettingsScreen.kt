@@ -11,7 +11,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -23,6 +25,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.fitter.app.ads.AdBanner
+import com.fitter.app.notifications.MealReminder
+import com.fitter.app.notifications.MealReminderManager
 import com.fitter.app.ui.components.FitterTextField
 import com.fitter.app.ui.components.PressableBox
 import com.fitter.app.ui.components.calculateBmr
@@ -56,6 +60,11 @@ fun SettingsScreen(
     var carbsGoalStr by remember { mutableStateOf(profile.carbsGoal.toString()) }
     var fatGoalStr by remember { mutableStateOf(profile.fatGoal.toString()) }
     var plateSize by remember { mutableStateOf(profile.defaultPlateSize) }
+
+    var remindersEnabled by remember { mutableStateOf(MealReminderManager.isMasterEnabled()) }
+    var mealReminders by remember { mutableStateOf(MealReminderManager.getReminders()) }
+    var editingReminder by remember { mutableStateOf<MealReminder?>(null) }
+    var isAddingNewReminder by remember { mutableStateOf(false) }
 
     var isError by remember { mutableStateOf(false) }
 
@@ -550,6 +559,155 @@ fun SettingsScreen(
             }
         }
 
+        // Section 4: Meal Scan Reminders Card
+        Card(
+            colors = CardDefaults.cardColors(containerColor = CardBackground),
+            shape = RoundedCornerShape(RadiusL),
+            modifier = Modifier
+                .fillMaxWidth()
+                .shadow(2.dp, RoundedCornerShape(RadiusL))
+                .border(1.dp, BorderColor, RoundedCornerShape(RadiusL))
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "MEAL SCAN REMINDERS",
+                            style = BrandTypography.CardTitle,
+                            color = MutedTextColor
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Daily notifications around meal times to remind you to scan your food.",
+                            style = BrandTypography.BodySmall,
+                            color = TextColor
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Switch(
+                        checked = remindersEnabled,
+                        onCheckedChange = { enabled ->
+                            remindersEnabled = enabled
+                            MealReminderManager.setMasterEnabled(enabled)
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = PrimaryAccent
+                        )
+                    )
+                }
+
+                if (remindersEnabled) {
+                    mealReminders.forEach { reminder ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(SurfaceTint, RoundedCornerShape(RadiusM))
+                                .border(1.dp, BorderColor, RoundedCornerShape(RadiusM))
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            PressableBox(
+                                onTap = {
+                                    isAddingNewReminder = false
+                                    editingReminder = reminder
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(
+                                        text = reminder.label,
+                                        style = BrandTypography.SectionTitle,
+                                        color = if (reminder.enabled) TextColor else MutedTextColor
+                                    )
+                                    Text(
+                                        text = "${MealReminderManager.formatTime12Hour(reminder.hour, reminder.minute)} · Tap to change time",
+                                        style = BrandTypography.BodySmall,
+                                        color = if (reminder.enabled) PrimaryAccent else MutedTextColor,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Switch(
+                                    checked = reminder.enabled,
+                                    onCheckedChange = { checked ->
+                                        mealReminders = MealReminderManager.updateReminder(
+                                            id = reminder.id,
+                                            label = reminder.label,
+                                            hour = reminder.hour,
+                                            minute = reminder.minute,
+                                            enabled = checked
+                                        )
+                                    },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = Color.White,
+                                        checkedTrackColor = PrimaryAccent
+                                    )
+                                )
+                                IconButton(
+                                    onClick = {
+                                        mealReminders = MealReminderManager.removeReminder(reminder.id)
+                                    },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Remove ${reminder.label} reminder",
+                                        tint = MutedTextColor,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            isAddingNewReminder = true
+                            editingReminder = MealReminder(
+                                id = "new",
+                                label = "Afternoon Snack",
+                                hour = 16,
+                                minute = 0,
+                                enabled = true
+                            )
+                        },
+                        shape = RoundedCornerShape(RadiusM),
+                        border = BorderStroke(1.dp, PrimaryAccent),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = null,
+                            tint = PrimaryAccent,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Add Meal Reminder",
+                            color = PrimaryAccent,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+
         // Validation Error Message
         if (isError) {
             Row(
@@ -589,6 +747,7 @@ fun SettingsScreen(
                     weight > 0 && height > 0 && age > 0 && calories > 0 && protein > 0 && carbs > 0 && fat > 0
                 ) {
                     isError = false
+                    MealReminderManager.syncNotifications()
                     onSave(
                         UserProfile(
                             weight = weight,
@@ -623,4 +782,123 @@ fun SettingsScreen(
         }
     }
     }
+
+    editingReminder?.let { target ->
+        MealReminderEditorDialog(
+            initialReminder = target,
+            isNew = isAddingNewReminder,
+            onDismiss = {
+                editingReminder = null
+                isAddingNewReminder = false
+            },
+            onConfirm = { label, hour, minute ->
+                mealReminders = if (isAddingNewReminder) {
+                    MealReminderManager.addReminder(label = label, hour = hour, minute = minute)
+                } else {
+                    MealReminderManager.updateReminder(
+                        id = target.id,
+                        label = label,
+                        hour = hour,
+                        minute = minute,
+                        enabled = target.enabled
+                    )
+                }
+                editingReminder = null
+                isAddingNewReminder = false
+            }
+        )
+    }
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MealReminderEditorDialog(
+    initialReminder: MealReminder,
+    isNew: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: (label: String, hour: Int, minute: Int) -> Unit
+) {
+    var labelText by remember(initialReminder) { mutableStateOf(initialReminder.label) }
+    val timePickerState = rememberTimePickerState(
+        initialHour = initialReminder.hour.coerceIn(0, 23),
+        initialMinute = initialReminder.minute.coerceIn(0, 59),
+        is24Hour = false
+    )
+    val presetLabels = listOf("Breakfast", "Lunch", "Snack", "Dinner")
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = CardBackground,
+        title = {
+            Text(
+                text = if (isNew) "Add Meal Reminder" else "Edit Meal Reminder",
+                style = BrandTypography.SectionTitle,
+                color = TextColor
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedTextField(
+                    value = labelText,
+                    onValueChange = { labelText = it },
+                    label = { Text("Meal Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    presetLabels.forEach { preset ->
+                        FilterChip(
+                            selected = labelText.equals(preset, ignoreCase = true),
+                            onClick = { labelText = preset },
+                            label = {
+                                Text(
+                                    text = preset,
+                                    style = BrandTypography.Micro,
+                                    maxLines = 1
+                                )
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                TimeInput(state = timePickerState)
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onConfirm(
+                        labelText.trim().ifEmpty { "Meal" },
+                        timePickerState.hour,
+                        timePickerState.minute
+                    )
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = PrimaryAccent),
+                shape = RoundedCornerShape(RadiusM)
+            ) {
+                Text(if (isNew) "Add Reminder" else "Save Time", color = Color.White)
+            }
+        },
+        dismissButton = {
+            OutlinedButton(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(RadiusM),
+                border = BorderStroke(1.dp, BorderColor)
+            ) {
+                Text("Cancel", color = TextColor)
+            }
+        }
+    )
+}
+
