@@ -232,17 +232,20 @@ begin
   values (v_target_user_id)
   on conflict (user_id) do nothing;
 
-  -- Atomically consume one scan and return whether within allowance
+  -- Ensure scan_quota row exists for today with used = 0
   insert into fitter.scan_quota (user_id, day, used)
-  values (v_target_user_id, current_date, 1)
-  on conflict (user_id, day) do update set used = scan_quota.used + 1;
+  values (v_target_user_id, current_date, 0)
+  on conflict (user_id, day) do nothing;
 
-  select (sq.used <= p_allowance + sq.bonus)
-  into v_result
-  from fitter.scan_quota sq
-  where sq.user_id = v_target_user_id and sq.day = current_date;
+  -- Atomically consume one scan ONLY if within allowance + bonus
+  update fitter.scan_quota sq
+  set used = sq.used + 1
+  where sq.user_id = v_target_user_id
+    and sq.day = current_date
+    and sq.used < (p_allowance + sq.bonus)
+  returning true into v_result;
 
-  return coalesce(v_result, true);
+  return coalesce(v_result, false);
 end;
 $$;
 

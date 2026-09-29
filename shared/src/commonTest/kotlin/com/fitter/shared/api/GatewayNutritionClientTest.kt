@@ -222,4 +222,33 @@ class GatewayNutritionClientTest {
         val result = gatewayClient.analyzeMealImageWithResult("base64_image_data")
         assertEquals(AnalyzeResult.QuotaExhausted, result)
     }
+
+    @Test
+    fun testDailyAllowanceProviderSentInRequest() = runBlocking {
+        var capturedBodyText = ""
+
+        val client = createMockHttpClient { request ->
+            val outgoing = request.body as io.ktor.http.content.TextContent
+            capturedBodyText = outgoing.text
+            respond(
+                content = sampleNutritionJson,
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, "application/json")
+            )
+        }
+
+        val gatewayClient = GatewayNutritionClient(
+            gatewayUrl = "https://gateway.fitter.test",
+            jwtProvider = { "valid-jwt" },
+            dailyAllowanceProvider = { 5 },
+            client = client
+        )
+
+        val response = gatewayClient.analyzeMealImage("base64_image_data")
+        assertEquals("Grilled Chicken and Rice", response.meal_name)
+        assertTrue(
+            capturedBodyText.contains("\"daily_allowance\":5"),
+            "Expected daily_allowance:5 in request body, got: $capturedBodyText"
+        )
+    }
 }

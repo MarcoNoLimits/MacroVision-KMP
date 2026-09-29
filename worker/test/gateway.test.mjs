@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import gateway, { consumeScanServerSide, executeVlmFailover } from "../src/index.ts";
+import gateway, { checkQuotaServerSide, consumeScanServerSide, executeVlmFailover } from "../src/index.ts";
 
 /**
  * In-memory KVNamespace implementation for testing worker endpoints.
@@ -438,3 +438,56 @@ test("Phase 9 (c): Missing OpenRouter key with fallback=true uses Gemini", async
     globalThis.fetch = originalFetch;
   }
 });
+
+test("checkQuotaServerSide grants Week-1 allowance (5) when first_install_date is within 7 days", async () => {
+  const env = createTestEnv();
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, "https://test-project.supabase.co/rest/v1/rpc/get_scan_quota");
+    assert.equal(options.headers["Accept-Profile"], "fitter");
+    return new Response(
+      JSON.stringify({
+        used: 3,
+        bonus: 0,
+        remaining: 0,
+        first_install_date: new Date(Date.now() - 2 * 86400 * 1000).toISOString(),
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  };
+
+  try {
+    const check = await checkQuotaServerSide(env, "week1-user", 3);
+    assert.equal(check.allowed, true);
+    assert.equal(check.effectiveAllowance, 5);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("checkQuotaServerSide denies scan when quota is exhausted", async () => {
+  const env = createTestEnv();
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async () => {
+    return new Response(
+      JSON.stringify({
+        used: 5,
+        bonus: 0,
+        remaining: 0,
+        first_install_date: new Date(Date.now() - 2 * 86400 * 1000).toISOString(),
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  };
+
+  try {
+    const check = await checkQuotaServerSide(env, "week1-user", 5);
+    assert.equal(check.allowed, false);
+    assert.equal(check.effectiveAllowance, 5);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+

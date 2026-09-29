@@ -149,7 +149,7 @@ function validateAndFormatNutritionResponse(parsed: any): NutritionResponse {
 
 // ─── VLM providers ───────────────────────────────────────────────────────────
 
-async function callGemini(prompt: string, base64Image?: string, model = "gemini-2.0-flash"): Promise<NutritionResponse> {
+async function callGemini(prompt: string, base64Image?: string, model = "gemini-2.5-flash"): Promise<NutritionResponse> {
   const apiKey = Deno.env.get("GEMINI_API_KEY");
   if (!apiKey) throw new Error("GEMINI_API_KEY not configured");
   const parts: any[] = [{ text: prompt }];
@@ -162,7 +162,10 @@ async function callGemini(prompt: string, base64Image?: string, model = "gemini-
       body: JSON.stringify({
         contents: [{ parts }],
         systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-        generationConfig: { responseMimeType: "application/json", temperature: 0.2, maxOutputTokens: 1000 },
+        // 4096 tokens prevents truncated JSON on complex multi-item meals.
+        // gemini-2.5-flash still returns markdown fences despite responseMimeType;
+        // cleanJson() strips them before parsing.
+        generationConfig: { responseMimeType: "application/json", temperature: 0.2, maxOutputTokens: 4096 },
       }),
     }
   );
@@ -173,7 +176,8 @@ async function callGemini(prompt: string, base64Image?: string, model = "gemini-
   return validateAndFormatNutritionResponse(JSON.parse(cleanJson(text)));
 }
 
-async function callOpenRouter(prompt: string, base64Image?: string, model = "qwen/qwen-2.5-vl-72b-instruct:free"): Promise<NutritionResponse> {
+// Default model: qwen/qwen3-vl-235b-a22b-instruct:free — multimodal (image+text→text), 256K ctx, 32K output, free tier.
+async function callOpenRouter(prompt: string, base64Image?: string, model = "qwen/qwen3-vl-235b-a22b-instruct"): Promise<NutritionResponse> {
   const apiKey = Deno.env.get("OPENROUTER_API_KEY");
   if (!apiKey) throw new Error("OPENROUTER_API_KEY not configured");
   const content: any[] = [{ type: "text", text: `${SYSTEM_PROMPT}\n\n${prompt}` }];
@@ -181,7 +185,7 @@ async function callOpenRouter(prompt: string, base64Image?: string, model = "qwe
   const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({ model, messages: [{ role: "user", content }], max_tokens: 1000 }),
+    body: JSON.stringify({ model, messages: [{ role: "user", content }], max_tokens: 2048 }),
   });
   if (!response.ok) throw new Error(`OpenRouter error (${response.status}): ${await response.text()}`);
   const data: any = await response.json();
@@ -215,7 +219,7 @@ async function executeVlmFailover(prompt: string, base64Image?: string, requeste
   async function tryProvider(name: string): Promise<{ result: NutritionResponse; provider: string } | null> {
     try {
       if (name === "gemini") {
-        const model = primaryProvider === "gemini" && requestedModel ? requestedModel : "gemini-2.0-flash";
+        const model = primaryProvider === "gemini" && requestedModel ? requestedModel : "gemini-2.5-flash";
         return { result: await callGemini(prompt, base64Image, model), provider: "gemini" };
       }
       if (name === "openrouter") {
@@ -265,6 +269,50 @@ function devMockResponse(): NutritionResponse {
 }
 
 // ─── Quota (server-side, service_role) ────────────────────────────────────────
+
+async function checkQuotaServerSide(
+  userId: string,
+  allowance: number
+): Promise<{ allowed: boolean; effectiveAllowance: number }> {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const url = `${supabaseUrl.replace(/\/$/, "")}/rest/v1/rpc/get_scan_quota`;
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Accept-Profile": "fitter",
+      "Content-Profile": "fitter",
+      apikey: serviceRole,
+      Authorization: `Bearer ${serviceRole}`,
+    },
+    body: JSON.stringify({ p_user_id: userId, p_allowance: allowance }),
+  });
+  if (!resp.ok) throw new Error(`get_scan_quota RPC failed (${resp.status}): ${await resp.text()}`);
+  const data: any = await resp.json();
+  if (typeof data === "boolean") {
+    return { allowed: data, effectiveAllowance: allowance };
+  }
+
+  let effectiveAllowance = allowance;
+  if (data && typeof data.first_install_date === "string") {
+    const installMs = Date.parse(data.first_install_date);
+    if (!Number.isNaN(installMs) && Date.now() - installMs < 7 * 86400 * 1000) {
+      effectiveAllowance = Math.max(allowance, MAX_DAILY_ALLOWANCE);
+    }
+  }
+
+  const used = typeof data?.used === "number" ? data.used : 0;
+  const bonus = typeof data?.bonus === "number" ? data.bonus : 0;
+  const remaining =
+    typeof data?.used === "number"
+      ? Math.max(0, effectiveAllowance + bonus - used)
+      : typeof data?.remaining === "number"
+      ? data.remaining
+      : effectiveAllowance;
+
+  return { allowed: remaining > 0, effectiveAllowance };
+}
 
 async function consumeScanServerSide(userId: string, allowance: number): Promise<boolean> {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -443,16 +491,17 @@ Deno.serve(async (req: Request) => {
         isPremium = entData.some((e) => e.status === "active");
       }
 
-      // Quota gate (server-authoritative, only for non-premium authenticated users)
+      // Quota pre-check BEFORE VLM spend (does not consume quota if VLM fails)
+      let effectiveAllowance = clientAllowance;
       if (!isPremium && userId) {
-        let quotaAllowed: boolean;
         try {
-          quotaAllowed = await consumeScanServerSide(userId, clientAllowance);
+          const quotaCheck = await checkQuotaServerSide(userId, clientAllowance);
+          effectiveAllowance = quotaCheck.effectiveAllowance;
+          if (!quotaCheck.allowed) return err402Quota();
         } catch (quotaErr: any) {
-          console.error("consume_scan RPC error:", quotaErr.message);
+          console.error("get_scan_quota RPC error:", quotaErr.message);
           return jsonResponse({ error: "Service temporarily unavailable", message: "Could not verify quota. Try again." }, 503);
         }
-        if (!quotaAllowed) return err402Quota();
       }
       // Unauthenticated (no userId) → allow scan, rate-limited only by provider
 
@@ -462,9 +511,18 @@ Deno.serve(async (req: Request) => {
       // Simple in-memory semantic cache key (no KV in Edge Functions free tier)
       // For production caching, add a Supabase table or Redis via Upstash.
       const semanticHash = await sha256(`analyze:${userPrompt}:${imageBase64.substring(0, 10000)}:${imageBase64.length}`);
-      console.log(`[analyze-meal] user=${effectiveId} hash=${semanticHash} allowance=${clientAllowance}`);
+      console.log(`[analyze-meal] user=${effectiveId} hash=${semanticHash} allowance=${effectiveAllowance}`);
 
       const { result, provider } = await executeVlmFailover(userPrompt, imageBase64, requestedModel);
+
+      // Consume 1 scan quota ONLY after VLM inference succeeded
+      if (!isPremium && userId) {
+        try {
+          await consumeScanServerSide(userId, effectiveAllowance);
+        } catch (consumeErr: any) {
+          console.error("Post-scan consume_scan RPC error:", consumeErr.message);
+        }
+      }
 
       return new Response(JSON.stringify(result), {
         status: 200,

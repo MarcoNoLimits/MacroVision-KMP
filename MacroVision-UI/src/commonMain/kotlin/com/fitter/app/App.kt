@@ -163,6 +163,9 @@ fun App() {
                         }
                     )
                     userEmail = authService.getCurrentUserEmail()
+                    ScanQuotaManager.remoteQuotaManager = quotaManager
+                    ScanQuotaManager.syncQuotaFromServer(selectedDateKey)
+                    scansRemainingToday = ScanQuotaManager.getRemainingScans(selectedDateKey)
                     authReady = true
                 } catch (e: Exception) {
                     authReady = false
@@ -186,11 +189,6 @@ fun App() {
 
                 // ── Step 2: Boot-side effects (only after JWT confirmed) ─────────────────
                 if (userId != null) {
-                    // Supabase Server Quota sync
-                    ScanQuotaManager.remoteQuotaManager = quotaManager
-                    ScanQuotaManager.syncQuotaFromServer(selectedDateKey)
-                    scansRemainingToday = ScanQuotaManager.getRemainingScans(selectedDateKey)
-
                     // Background sync
                     (mealRepository as? com.fitter.shared.data.SupabaseMealRepository)?.pullRemote(selectedDateKey)
                     (userRepository as? com.fitter.shared.data.SupabaseUserRepository)?.pullRemote(selectedDateKey)
@@ -214,11 +212,11 @@ fun App() {
                         delay(recoveryDelay)
                         try {
                             authService.ensureSignedIn()
-                            authReady = true
-                            // Trigger server sync now that we're back online
+                            // Trigger server sync now that we're back online before unlocking scan gate
                             ScanQuotaManager.remoteQuotaManager = quotaManager
                             ScanQuotaManager.syncQuotaFromServer(selectedDateKey)
                             scansRemainingToday = ScanQuotaManager.getRemainingScans(selectedDateKey)
+                            authReady = true
                             DiagnosticsCrashHook.log(
                                 level = DiagnosticLevel.INFO,
                                 tag = "Auth",
@@ -246,7 +244,8 @@ fun App() {
                 GatewayNutritionClient(
                     gatewayUrl = gatewayUrl,
                     jwtProvider = { authService.currentSession()?.accessToken },
-                    reAuthenticator = { authService.ensureSignedIn() }
+                    reAuthenticator = { authService.ensureSignedIn() },
+                    dailyAllowanceProvider = { ScanQuotaManager.getDailyFreeLimit() }
                 )
             }
 
@@ -304,8 +303,13 @@ fun App() {
                         adManager = adManager,
                         playAdDuringScan = showAdsForUser || ScanQuotaManager.shouldForceInterstitialAd(selectedDateKey),
                         onScanConsumed = {
+                            // Record local consumption immediately for responsive UI; the Gateway already
+                            // consumed 1 server-side quota after VLM inference succeeded, so sync from
+                            // server instead of calling consumeScanServer (which would double-increment).
+                            ScanQuotaManager.consumeScan(selectedDateKey)
+                            scansRemainingToday = ScanQuotaManager.getRemainingScans(selectedDateKey)
                             coroutineScope.launch {
-                                ScanQuotaManager.consumeScanServer(selectedDateKey)
+                                ScanQuotaManager.syncQuotaFromServer(selectedDateKey)
                                 scansRemainingToday = ScanQuotaManager.getRemainingScans(selectedDateKey)
                             }
                         },

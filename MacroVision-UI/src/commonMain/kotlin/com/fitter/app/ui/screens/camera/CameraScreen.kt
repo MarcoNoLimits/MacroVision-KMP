@@ -162,6 +162,11 @@ fun CameraScreen(
     // F3.3: isCancelled guards the result callback so a cancelled state doesn't later navigate
     var isCancelled by remember { mutableStateOf(false) }
 
+    val deliverSuccessfulScan: (String) -> Unit = { responseJson ->
+        onScanConsumed()
+        onResultObtained(responseJson)
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
 
         if (!isAnalyzing && errorMessage == null) {
@@ -174,12 +179,12 @@ fun CameraScreen(
                     onPhotoCaptured(compressedBytes)
                     isAnalyzing = true
                     errorMessage = null
-                    onScanConsumed()
 
                     if (playAdDuringScan) {
                         var apiResultJson: String? = null
                         var isAdFinished = false
                         var apiError: String? = null
+                        var resultDelivered = false
 
                         // 1. Kick off AI analysis in background
                         coroutineScope.launch {
@@ -193,8 +198,9 @@ fun CameraScreen(
                                     Json.encodeToString(NutritionResponse.serializer(), response)
                                 }
                                 apiResultJson = responseJson
-                                if (isAdFinished && !isCancelled) {
-                                    onResultObtained(responseJson)
+                                if (isAdFinished && !isCancelled && !resultDelivered) {
+                                    resultDelivered = true
+                                    deliverSuccessfulScan(responseJson)
                                 }
                             } catch (e: Exception) {
                                 apiError = e.message ?: "Unknown API Error"
@@ -209,9 +215,10 @@ fun CameraScreen(
                         // 2. Play Ad while scan is processing
                         adManager.showScanProcessingAd {
                             isAdFinished = true
-                            if (!isCancelled) {
+                            if (!isCancelled && !resultDelivered) {
                                 if (apiResultJson != null) {
-                                    onResultObtained(apiResultJson!!)
+                                    resultDelivered = true
+                                    deliverSuccessfulScan(apiResultJson!!)
                                 } else if (apiError != null) {
                                     errorMessage = apiError
                                     isAnalyzing = false
@@ -229,7 +236,7 @@ fun CameraScreen(
                                     val response = apiClient.analyzeMealImage(base64, plateSizeInches)
                                     Json.encodeToString(NutritionResponse.serializer(), response)
                                 }
-                                if (!isCancelled) onResultObtained(responseJson)
+                                if (!isCancelled) deliverSuccessfulScan(responseJson)
                             } catch (e: Exception) {
                                 val err = e.message ?: "Unknown API Error"
                                 DiagnosticsCrashHook.logVlmError("CameraScreen", err, e)
@@ -339,7 +346,7 @@ fun CameraScreen(
                                         val response = apiClient.analyzeMealImage(base64, plateSizeInches)
                                         Json.encodeToString(NutritionResponse.serializer(), response)
                                     }
-                                    onResultObtained(responseJson)
+                                    if (!isCancelled) deliverSuccessfulScan(responseJson)
                                 } catch (e: Exception) {
                                     val err = e.message ?: "Unknown API Error"
                                     DiagnosticsCrashHook.logVlmError("CameraScreen", err, e)
@@ -385,7 +392,7 @@ fun CameraScreen(
                                         val response = apiClient.analyzeMealImage(base64, plateSizeInches)
                                         Json.encodeToString(NutritionResponse.serializer(), response)
                                     }
-                                    onResultObtained(responseJson)
+                                    if (!isCancelled) deliverSuccessfulScan(responseJson)
                                 } catch (e: Exception) {
                                     val err = e.message ?: "Unknown API Error"
                                     DiagnosticsCrashHook.logVlmError("CameraScreen", err, e)

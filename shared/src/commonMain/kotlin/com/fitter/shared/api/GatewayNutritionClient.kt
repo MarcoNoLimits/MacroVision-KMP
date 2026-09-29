@@ -79,6 +79,7 @@ class GatewayNutritionClient(
     private val jwtProvider: () -> String?,
     private val deviceIdProvider: () -> String = { "unknown" },
     private val reAuthenticator: (suspend () -> Unit)? = null,
+    private val dailyAllowanceProvider: () -> Int = { 3 },
     client: HttpClient? = null
 ) : NutritionClient {
 
@@ -172,7 +173,7 @@ class GatewayNutritionClient(
         return executeAnalyzeMeal(
             base64Image = base64Image,
             plateSizeInches = plateSizeInches,
-            dailyAllowance = 3
+            dailyAllowance = dailyAllowanceProvider().coerceIn(1, 5)
         )
     }
 
@@ -197,16 +198,17 @@ class GatewayNutritionClient(
         plateSizeInches: Float?,
         dailyAllowance: Int
     ): AnalyzeResult {
-        // Try to get a JWT, but do NOT block the request if one isn't available.
-        // Auth failure at boot is non-blocking — the Worker falls back to device-ID rate-limiting.
         var jwt = jwtProvider()
         if (jwt == null && reAuthenticator != null) {
             try {
                 reAuthenticator.invoke()
                 jwt = jwtProvider()
             } catch (_: Throwable) {
-                // reAuth failed — proceed without a token; Worker will handle it
+                return AnalyzeResult.AuthRequired
             }
+        }
+        if (jwt == null) {
+            return AnalyzeResult.AuthRequired
         }
 
         val requestBody = AnalyzeMealRequest(

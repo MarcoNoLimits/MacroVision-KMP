@@ -235,6 +235,62 @@ async function isUserPremium(env: Env, userId: string): Promise<boolean> {
 // ─── Server-side quota (service_role RPC) ─────────────────────────────────────
 
 /**
+ * Check whether the user has remaining scan quota WITHOUT incrementing `used`.
+ * Respects Week-1 onboarding (5 scans/day if first_install_date < 7 days ago).
+ */
+async function checkQuotaServerSide(
+  env: Env,
+  userId: string,
+  allowance: number
+): Promise<{ allowed: boolean; effectiveAllowance: number }> {
+  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not configured on gateway");
+  }
+
+  const url = `${env.SUPABASE_URL.replace(/\/$/, "")}/rest/v1/rpc/get_scan_quota`;
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Accept-Profile": "fitter",
+      "Content-Profile": "fitter",
+      "apikey": env.SUPABASE_SERVICE_ROLE_KEY,
+      "Authorization": `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+    },
+    body: JSON.stringify({ p_user_id: userId, p_allowance: allowance }),
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`get_scan_quota RPC failed (${resp.status}): ${errText}`);
+  }
+
+  const data: any = await resp.json();
+  if (typeof data === "boolean") {
+    return { allowed: data, effectiveAllowance: allowance };
+  }
+
+  let effectiveAllowance = allowance;
+  if (data && typeof data.first_install_date === "string") {
+    const installMs = Date.parse(data.first_install_date);
+    if (!Number.isNaN(installMs) && Date.now() - installMs < 7 * 86400 * 1000) {
+      effectiveAllowance = Math.max(allowance, MAX_DAILY_ALLOWANCE);
+    }
+  }
+
+  const used = typeof data?.used === "number" ? data.used : 0;
+  const bonus = typeof data?.bonus === "number" ? data.bonus : 0;
+  const remaining =
+    typeof data?.used === "number"
+      ? Math.max(0, effectiveAllowance + bonus - used)
+      : typeof data?.remaining === "number"
+      ? data.remaining
+      : effectiveAllowance;
+
+  return { allowed: remaining > 0, effectiveAllowance };
+}
+
+/**
  * Consume one scan on the server via service_role.
  * Returns true if within allowance, false if exhausted.
  * Throws on network/DB error (caller should return 500).
@@ -312,7 +368,7 @@ async function callGemini(
   env: Env,
   prompt: string,
   base64Image?: string,
-  model = "gemini-2.0-flash"
+  model = "gemini-2.5-flash"
 ): Promise<NutritionResponse> {
   const apiKey = env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY not configured on gateway");
@@ -325,7 +381,7 @@ async function callGemini(
   const payload = {
     contents: [{ parts }],
     systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-    generationConfig: { responseMimeType: "application/json", temperature: 0.2, maxOutputTokens: 1000 },
+    generationConfig: { responseMimeType: "application/json", temperature: 0.2, maxOutputTokens: 4096 },
   };
 
   // HARD RULE: x-goog-api-key header — NEVER put key in URL
@@ -353,7 +409,9 @@ async function callOpenRouter(
   env: Env,
   prompt: string,
   base64Image?: string,
-  model = "qwen/qwen-2.5-vl-72b-instruct:free"
+  // Default: google/gemma-4-31b-it:free — multimodal, 256K ctx, free tier.
+  // Replaces defunct qwen/qwen-2.5-vl-72b-instruct:free.
+  model = "google/gemma-4-31b-it:free"
 ): Promise<NutritionResponse> {
   const apiKey = env.OPENROUTER_API_KEY;
   if (!apiKey) throw new Error("OPENROUTER_API_KEY not configured on gateway");
@@ -468,7 +526,7 @@ async function executeVlmFailover(
       try {
         // For gemini primary, pass model hint only when the primary itself is gemini.
         // For gemini fallback, always use the safe default model.
-        const model = primaryProvider === "gemini" && requestedModel ? requestedModel : "gemini-2.0-flash";
+        const model = primaryProvider === "gemini" && requestedModel ? requestedModel : "gemini-2.5-flash";
         const result = await callGemini(env, prompt, base64Image, model);
         return { result, provider: "gemini" };
       } catch (err: any) {
@@ -678,22 +736,22 @@ export default {
           return jsonResponse({ error: "Bad Request", message: "image_base64 is required" }, 400);
         }
 
-        // ── Quota check BEFORE VLM spend (server-authoritative) ────────────────
+        // ── Quota pre-check BEFORE VLM spend (does not consume quota on VLM error) ──
+        let effectiveAllowance = clientAllowance;
         if (!premium) {
-          let quotaAllowed: boolean;
           try {
-            quotaAllowed = await consumeScanServerSide(env, userId, clientAllowance);
+            const quotaCheck = await checkQuotaServerSide(env, userId, clientAllowance);
+            effectiveAllowance = quotaCheck.effectiveAllowance;
+            if (!quotaCheck.allowed) {
+              return err402Quota();
+            }
           } catch (quotaErr: any) {
-            console.error("consume_scan RPC error:", quotaErr.message);
+            console.error("get_scan_quota RPC error:", quotaErr.message);
             // If Supabase is down: fail safe — do NOT allow VLM spend
             return jsonResponse(
               { error: "Service temporarily unavailable", message: "Could not verify quota. Try again." },
               503
             );
-          }
-
-          if (!quotaAllowed) {
-            return err402Quota();
           }
         }
         // Premium users skip quota; scan still logged for analytics if desired
@@ -711,6 +769,13 @@ export default {
           const cachedResult = await env.VLM_CACHE.get(cacheKey);
           if (cachedResult) {
             console.log(`[Cache HIT] user=${userId} key=${cacheKey}`);
+            if (!premium) {
+              try {
+                await consumeScanServerSide(env, userId, effectiveAllowance);
+              } catch (consumeErr: any) {
+                console.error("Post-scan consume_scan RPC error:", consumeErr.message);
+              }
+            }
             return new Response(cachedResult, {
               status: 200,
               headers: { "Content-Type": "application/json", "X-Cache": "HIT", "X-Provider": "cache", ...CORS_HEADERS },
@@ -718,9 +783,18 @@ export default {
           }
         }
 
-        console.log(`[Cache MISS] user=${userId} key=${cacheKey} allowance=${clientAllowance}`);
+        console.log(`[Cache MISS] user=${userId} key=${cacheKey} allowance=${effectiveAllowance}`);
         const { result, provider } = await executeVlmFailover(env, userPrompt, imageBase64, requestedModel);
         const resultJson = JSON.stringify(result);
+
+        // Consume 1 scan quota ONLY after VLM inference succeeded
+        if (!premium) {
+          try {
+            await consumeScanServerSide(env, userId, effectiveAllowance);
+          } catch (consumeErr: any) {
+            console.error("Post-scan consume_scan RPC error:", consumeErr.message);
+          }
+        }
 
         if (env.VLM_CACHE) {
           await env.VLM_CACHE.put(cacheKey, resultJson, { expirationTtl: 2592000 });
@@ -786,5 +860,5 @@ export default {
   },
 };
 
-export { consumeScanServerSide, executeVlmFailover };
+export { checkQuotaServerSide, consumeScanServerSide, executeVlmFailover };
 
