@@ -2,7 +2,7 @@
 
 > **Execution directive:** This document is the frontend craft/UX pass for the Fitter app (Kotlin Multiplatform, Jetpack Compose — Android + iOS, **not** React/HTML/Tailwind). Implement tasks in order P0 → P3. Every task carries a concrete contract and a **verifiable acceptance criterion** that the next reviewer greps for. Zero ambiguity, zero orphan changes.
 >
-> **Author:** Nexus @frontend (frontend audit, 2026-09-16) · **Baseline:** `:shared:testDebugUnitTest :MacroVision-UI:testDebugUnitTest` green before this pass.
+> **Author:** Nexus @frontend (frontend audit, 2026-09-16) · **Baseline:** `:shared:testDebugUnitTest :FitCal-UI:testDebugUnitTest` green before this pass.
 
 ---
 
@@ -21,14 +21,14 @@
 
 ## F0.1 Unique Meal IDs (delete-the-wrong-meal bug)
 
-- **Problem:** In `MacroVision-UI/src/commonMain/kotlin/com/fitter/app/App.kt` (~line 197), a `LoggedMeal.id` is derived from `"${mealName}_${epochMillis}_${size}"`. Two meals logged in the same second (name+time+size identical) collide; `DashboardScreen` uses `indexOfFirst { id == }` and can resolve to the **first** match, deleting the wrong meal.
+- **Problem:** In `FitCal-UI/src/commonMain/kotlin/com/fitter/app/App.kt` (~line 197), a `LoggedMeal.id` is derived from `"${mealName}_${epochMillis}_${size}"`. Two meals logged in the same second (name+time+size identical) collide; `DashboardScreen` uses `indexOfFirst { id == }` and can resolve to the **first** match, deleting the wrong meal.
 - **Contract:**
   - Introduce a monotonic, collision-proof ID for `LoggedMeal` (UUID v4 via a small `fun newMealId(): String`, or a persisted monotonic counter). Apply wherever meals are created (log flow + any test fixtures that construct ids by hand).
   - Keep `id` a `String` (no serialization schema migration beyond id format; old ids remain valid, just non-generated going forward).
 - **Acceptance criteria:**
-  - `grep -n "newMealId" MacroVision-UI/src/commonMain/kotlin/com/fitter/app/App.kt` → present and used for meal creation.
+  - `grep -n "newMealId" FitCal-UI/src/commonMain/kotlin/com/fitter/app/App.kt` → present and used for meal creation.
   - A unit test proves two meals created in the same millisecond get distinct ids (add to `commonTest`, e.g. `MealIdTest.kt`).
-  - `./gradlew :shared:testDebugUnitTest :MacroVision-UI:testDebugUnitTest` green.
+  - `./gradlew :shared:testDebugUnitTest :FitCal-UI:testDebugUnitTest` green.
 
 ## F0.2 Undo on Meal Delete
 
@@ -39,7 +39,7 @@
   - A second removal while a toast is pending replaces/refreshes the toast and its 5s timer; oldest-delete is **not** kept (one undo slot only — document choice in a comment).
   - Depends on F0.1 (restore by stable id).
 - **Acceptance criteria:**
-  - `grep -in "undo" MacroVision-UI/src/commonMain/kotlin/com/fitter/app/ui/screens/dashboard/DashboardScreen.kt` → present.
+  - `grep -in "undo" FitCal-UI/src/commonMain/kotlin/com/fitter/app/ui/screens/dashboard/DashboardScreen.kt` → present.
   - Manual/E2E path: delete → meal disappears → Undo → meal reappears with same macros/date.
   - Build green.
 
@@ -71,7 +71,7 @@
   - **Recalculate button color changes from blue to `PrimaryAccent`** (emerald) in `ReviewScreen.kt:422` — one consistent primary across the app.
   - Replace every raw literal in `ui/` with the token; `ui/theme/*` is the only place allowed to hold raw `Color(0x...)`.
 - **Acceptance criteria:**
-  - `grep -rn "Color(0x" MacroVision-UI/src/commonMain/kotlin/com/fitter/app/ui --include="*.kt"` → matches **only** under `ui/theme/`.
+  - `grep -rn "Color(0x" FitCal-UI/src/commonMain/kotlin/com/fitter/app/ui --include="*.kt"` → matches **only** under `ui/theme/`.
   - `ReviewScreen.kt` contains no `0xFF3B82F6`.
   - Build green.
 
@@ -190,7 +190,7 @@
 
 # Definition of Done (run these before reporting back)
 
-1. `JAVA_HOME="C:/Program Files/Android/Android Studio1/jbr" ./gradlew :shared:testDebugUnitTest :MacroVision-UI:testDebugUnitTest` → green.
+1. `JAVA_HOME="C:/Program Files/Android/Android Studio1/jbr" ./gradlew :shared:testDebugUnitTest :FitCal-UI:testDebugUnitTest` → green.
 2. Acceptance greps from every task pass (list them in your report with `→ OK`/`→ FAIL`).
 3. `git status` shows only intended files changed (no stray build artifacts, no secrets).
 4. Report format, per task: **Done / Partial / Skipped** + files touched + one-line rationale for any deviation.

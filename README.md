@@ -1,6 +1,6 @@
-# 📸 Fitter — AI Food Nutrition Tracker
+# 📸 FitCal — AI Food Nutrition Tracker
 
-Fitter is a modern, cross-platform **Kotlin Multiplatform (KMP)** application designed to simplify meal tracking. Capture a photo of your food, and Fitter will automatically estimate its ingredients, weights, and macronutrient profile using a robust, multi-provider Vision-Language Model (VLM) failover sequence.
+FitCal is a modern, cross-platform **Kotlin Multiplatform (KMP)** application designed to simplify meal tracking. Capture a photo of your food, and FitCal will automatically estimate its ingredients, weights, and macronutrient profile using a robust, multi-provider Vision-Language Model (VLM) failover sequence.
 
 ---
 
@@ -18,8 +18,8 @@ Fitter is a modern, cross-platform **Kotlin Multiplatform (KMP)** application de
 
 ```mermaid
 graph TD
-    iosApp[iosApp Swift Project] -->|Depends on| MacroVisionUI[MacroVision-UI Compose Module]
-    MacroVisionUI -->|Depends on| Shared[shared Library Module]
+    iosApp[iosApp Swift Project] -->|Depends on| FitCalUI[FitCal-UI Compose Module]
+    FitCalUI -->|Depends on| Shared[shared Library Module]
     Shared -->|Calls| OpenRouter[OpenRouter API]
     Shared -->|Calls| Gemini[Gemini Developer API]
     Shared -->|Calls| Groq[Groq API]
@@ -30,7 +30,7 @@ graph TD
 ## 📂 Project Structure
 
 * **`:shared`**: Platform-independent Kotlin library hosting HTTP clients, data models (e.g. `NutritionResponse`), and LLM/VLM logic.
-* **`:MacroVision-UI`**: Shared UI application containing Compose screens, Jetpack Navigation, platform-specific Camera implementations, and persistent preferences.
+* **`:FitCal-UI`**: Shared UI application containing Compose screens, Jetpack Navigation, platform-specific Camera implementations, and persistent preferences.
 * **`iosApp/`**: Native Xcode project wrapping and launching the Compose app framework on iOS devices.
 
 ---
@@ -56,7 +56,7 @@ To run the application, you need to configure your API keys.
 ### Android
 Compile and install the debug app on a connected device/emulator:
 ```bash
-./gradlew :MacroVision-UI:installDebug
+./gradlew :FitCal-UI:installDebug
 ```
 
 ### iOS

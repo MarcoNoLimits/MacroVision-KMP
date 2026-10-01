@@ -1,4 +1,4 @@
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+﻿import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -47,7 +47,7 @@ kotlin {
 }
 
 configure<com.android.build.api.dsl.LibraryExtension> {
-    namespace = "com.fitter.shared"
+    namespace = "com.fitcal.shared"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
     
     defaultConfig {

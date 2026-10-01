@@ -11,8 +11,8 @@ CONFIG_FILE="Configuration/Config.xcconfig"
 echo "// Generated dynamically from root .env file" > "$CONFIG_FILE"
 echo "// ZERO VLM API keys here — all AI inference routes through the Cloudflare Worker" >> "$CONFIG_FILE"
 echo "TEAM_ID=" >> "$CONFIG_FILE"
-echo "BUNDLE_ID=com.fitter.app" >> "$CONFIG_FILE"
-echo "APP_NAME=Fitter" >> "$CONFIG_FILE"
+echo "BUNDLE_ID=com.fitcal.app" >> "$CONFIG_FILE"
+echo "APP_NAME=FitCal" >> "$CONFIG_FILE"
 
 # Allowed keys to propagate to iOS config (allowlist approach)
 ALLOWED_KEYS=("GATEWAY_URL" "SUPABASE_URL" "SUPABASE_ANON_KEY")
@@ -42,7 +42,7 @@ if [ -f "$ENV_FILE" ]; then
     echo "Config.xcconfig updated successfully (allowlist: ${ALLOWED_KEYS[*]})."
 else
     echo "Warning: .env file not found at $ENV_FILE. Using defaults."
-    echo "GATEWAY_URL=https://fitter-gateway.workers.dev" >> "$CONFIG_FILE"
+    echo "GATEWAY_URL=https://fitcal-gateway.workers.dev" >> "$CONFIG_FILE"
     echo "SUPABASE_URL=https://placeholder-project.supabase.co" >> "$CONFIG_FILE"
     echo "SUPABASE_ANON_KEY=" >> "$CONFIG_FILE"
 fi

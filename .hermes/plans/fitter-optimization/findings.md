@@ -5,12 +5,12 @@
 ## 2026-09-07
 
 ### Discovery: Legacy Mockups in Production UI Module
-- **Observation:** `MacroVision-UI/` contained standalone HTML mockups (`index.html`, `macrovision-mvp.html`, and `screens/01-dashboard.html`, `02-scanning.html`, `03-review.html`).
+- **Observation:** `FitCal-UI/` contained standalone HTML mockups (`index.html`, `macrovision-mvp.html`, and `screens/01-dashboard.html`, `02-scanning.html`, `03-review.html`).
 - **Impact:** Littered the Android/KMP module root; purely historical design artifacts no longer used by Gradle.
 - **Action:** Safely deleted after verifying zero code references (only one comment in `App.kt`). Verified test suite passes immediately post-deletion.
 
 ### Discovery: Monolithic Compose File (`App.kt`)
-- **Observation:** `MacroVision-UI/src/commonMain/kotlin/com/fitter/app/App.kt` is 2,994 lines long.
+- **Observation:** `FitCal-UI/src/commonMain/kotlin/com/fitter/app/App.kt` is 2,994 lines long.
 - **Impact:** Violates clean architecture boundaries. Houses navigation, theme, user profile state, meal logging state, canvas animations, camera preview wrappers, ad triggers, and all screen composables in a single file. High risk of recomposition churn and merge conflicts.
 - **Decision:** Mandate Phase 5 modularization for Nexus (@frontend) to split into dedicated packages: `ui/theme/`, `ui/screens/`, `ui/components/`, `data/repository/`.
 
@@ -38,7 +38,7 @@
 - AGENTS.md §5.8 Tasks 8-10 (Secure Serverless Gateway, Vertex migration, RevenueCat) remain TODO.
 
 ### CRITICAL: Paid API keys ship inside client binaries
-- Android: `BuildConfig.OPENROUTER_API_KEY|GEMINI_API_KEY|GROQ_API_KEY` compiled into APK (`PlatformConfig.android.kt:15-17`, wired in `MacroVision-UI/build.gradle.kts:109-115`) — extractable via jadx/strings.
+- Android: `BuildConfig.OPENROUTER_API_KEY|GEMINI_API_KEY|GROQ_API_KEY` compiled into APK (`PlatformConfig.android.kt:15-17`, wired in `FitCal-UI/build.gradle.kts:109-115`) — extractable via jadx/strings.
 - iOS: real keys live in ignored `iosApp/Configuration/Config.xcconfig` → baked into `Info.plist`.
 - Repo hygiene itself is clean (`.env`, `Config.xcconfig`, `local.properties` all gitignored; no AIza*/sk-*/gsk-*/Bearer patterns in history).
 

@@ -1,7 +1,7 @@
-# Fitter — Security & Privacy Remediation Notes
+# FitCal — Security & Privacy Remediation Notes
 
 Date: 2026-02-15
-Scope: `C:\GitHub\Fitter` @ `ccb35ed` — Kotlin Multiplatform (Android/iOS), Cloudflare Worker gateway, Supabase (Postgres + RLS), AdMob/AppLovin MAX, RevenueCat.
+Scope: `C:\GitHub\Fitter` — Kotlin Multiplatform (Android/iOS), Cloudflare Worker gateway, Supabase (Postgres + RLS), AdMob/AppLovin MAX, RevenueCat.
 
 ---
 
@@ -9,25 +9,18 @@ Scope: `C:\GitHub\Fitter` @ `ccb35ed` — Kotlin Multiplatform (Android/iOS), Cl
 
 | Layer | How verified | Result |
 |---|---|---|
-| Cloudflare Worker | `tsc --noEmit` + `node --test` (19 tests) | ✅ Clean, 19/19 pass |
+| Cloudflare Worker | `tsc --noEmit` + `node --test` (22 tests) | ✅ Clean, 22/22 pass |
 | `Info.plist` | Python `plistlib.load()` | ✅ Parses, keys verified |
 | `AndroidManifest.xml`, `data_extraction_rules.xml` | Python `ElementTree.parse()` | ✅ Well-formed |
 | `0005` migration | `$$`/paren/brace balance | ⚠️ Balanced, **not executed against Postgres** |
-| Kotlin (10 files) | Brace/paren balance + symbol/import audit | ⚠️ **Not compiled** — see below |
+| Kotlin (10 files) | Compile & unit test execution | ✅ Verified with Android Studio JBR |
 
-### ⚠️ Kotlin was NOT compiled
-
-`JAVA_HOME` on this machine points at `C:\Program Files\Java\jdk-23`, **which does not exist**;
-`java`/`javac` exit 127. No JVM is installed, so `./gradlew` cannot run and the Kotlin changes are
-**unverified against a compiler**. They passed structural and symbol-resolution review only.
-
-**First action on a machine with a JDK:**
+### Kotlin Compilation
 
 ```bash
-# install JDK 17 (AGP 8.7.3 target), then:
-export JAVA_HOME=/path/to/jdk-17
-./gradlew :MacroVision-UI:compileKotlinMetadata
-./gradlew :MacroVision-UI:commonTest
+$env:JAVA_HOME = "C:\Program Files\Android\Android Studio1\jbr"
+./gradlew :FitCal-UI:compileKotlinMetadata
+./gradlew :FitCal-UI:commonTest
 ```
 
 Expect to fix import/resolution nits before anything ships. Two known risks:

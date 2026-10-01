@@ -7,8 +7,8 @@ $configFile = "Configuration/Config.xcconfig"
 $lines = @(
     "// Generated dynamically from root .env file",
     "TEAM_ID=",
-    "BUNDLE_ID=com.fitter.app",
-    "APP_NAME=Fitter"
+    "BUNDLE_ID=com.fitcal.app",
+    "APP_NAME=FitCal"
 )
 
 if (Test-Path $envFile) {

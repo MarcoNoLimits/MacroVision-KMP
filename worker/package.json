@@ -1,7 +1,7 @@
 {
-  "name": "fitter-gateway",
+  "name": "fitcal-gateway",
   "version": "1.0.0",
-  "description": "Cloudflare Worker gateway for Fitter VLM inference, caching, and rate limiting",
+  "description": "Cloudflare Worker gateway for FitCal VLM inference, caching, and rate limiting",
   "main": "src/index.ts",
   "type": "module",
   "scripts": {

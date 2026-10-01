@@ -12,7 +12,7 @@ Play Console / AdMob account setup.
 |---|---|---|
 | Privacy policy URL | *(host `privacy.html` — see §4)* | **Mandatory.** Rejection without it. |
 | Ads | Yes | AdMob SDKs are bundled |
-| Target audience — age group | **18 and over only** | Fitter is a calorie/nutrition app. Declaring 13–17 triggers the **Families policy** and mandatory child-directed treatment (Certified Ads Program, no personalized ads, restricted SDKs). Declaring 18+ is honest *and* far cheaper to satisfy. |
+| Target audience — age group | **18 and over only** | FitCal is a calorie/nutrition app. Declaring 13–17 triggers the **Families policy** and mandatory child-directed treatment (Certified Ads Program, no personalized ads, restricted SDKs). Declaring 18+ is honest *and* far cheaper to satisfy. |
 | News app | No | |
 | COVID-19 app | No | |
 | Content rating questionnaire | Declare: user-generated content **No**, ads **Yes**, health **No** | Anything resembling a health claim escalates review. Do not claim diagnosis/treatment. |
@@ -64,9 +64,9 @@ the privacy policy live and content demonstrated.
 ## 3. Play Store full description (draft)
 
 ```
-Fitter turns your camera into a nutrition calculator.
+FitCal turns your camera into a nutrition calculator.
 
-Snap a photo of any meal and Fitter estimates its calories and macronutrients in
+Snap a photo of any meal and FitCal estimates its calories and macronutrients in
 seconds — no searching, no weighing, no database hunting.
 
 WHAT YOU GET
@@ -80,7 +80,7 @@ WHAT YOU GET
 
 BUILT FOR ACCURACY
 Every estimate is editable. If the portion looks off, change the weight and the
-numbers follow — Fitter gives you a starting point, and you stay in control.
+numbers follow — FitCal gives you a starting point, and you stay in control.
 
 PRIVACY
 • Meal photos are processed to generate your estimate, then stored with your account
@@ -88,7 +88,7 @@ PRIVACY
 • One-tap deletion of your account and all data
 • We never sell your data
 
-Fitter provides automated estimates only and is not medical advice. It is intended
+FitCal provides automated estimates only and is not medical advice. It is intended
 for adults 18+. It is not a substitute for professional medical or dietary advice.
 ```
 
@@ -96,8 +96,8 @@ for adults 18+. It is not a substitute for professional medical or dietary advic
 
 ## 4. Host the privacy policy (do this first)
 
-The in-app text lives at `MacroVision-UI/src/commonMain/kotlin/com/fitter/app/ui/screens/privacy/PrivacyPolicyScreen.kt`.
-For the store listing you also need a **public URL**. Fitter supports this out of the box:
+The in-app text lives at `FitCal-UI/src/commonMain/kotlin/com/fitcal/app/ui/screens/privacy/PrivacyPolicyScreen.kt`.
+For the store listing you also need a **public URL**. FitCal supports this out of the box:
 
 - **Gateway Worker Route (Default):** The Cloudflare Worker directly serves `GET /privacy` and `GET /privacy.html` at `https://<GATEWAY_URL>/privacy` (zero extra hosting setup required).
 - **Static Hosting (Optional Alternative):**
@@ -108,7 +108,7 @@ npx vercel deploy public --prod     # or: netlify deploy --prod --dir=public
 ```
 
 Replace every placeholder before publishing:
-- `privacy@fitter.app` — use a mailbox you actually monitor (reviewers test it)
+- `privacy@fitcal.app` — use a mailbox you actually monitor (reviewers test it)
 - `Last updated: February 2026` — set the real publish date
 - Add your legal entity name and jurisdiction if you have one
 
@@ -122,7 +122,7 @@ compliance finding.
 Both Play and AdMob reviewers want to try the app without signing up. Add a note to the
 listing:
 
-> **Reviewer access:** Email `review@fitter.app` / password `FitterReview2026!`.
+> **Reviewer access:** Email `review@fitcal.app` / password `FitCalReview2026!`.
 > (Or: the app works fully as a guest — no account required.)
 
 Prefer the **guest path** if it works end to end: fewer credentials to leak, and it proves
@@ -132,7 +132,7 @@ the onboarding claim.
 
 ## 6. Final pre-submission checklist
 
-- [x] `./gradlew :MacroVision-UI:testDebugUnitTest` and `:MacroVision-UI:bundleRelease` pass (fully compiler-verified & release AAB generated)
+- [x] `./gradlew :FitCal-UI:testDebugUnitTest` and `:FitCal-UI:bundleRelease` pass (fully compiler-verified & release AAB generated)
 - [ ] `cd worker && npx wrangler deploy` — hardened Worker is live
 - [ ] `supabase db push` — **migration 0005**, or the quota bypass is exploitable
 - [ ] `REVENUECAT_WEBHOOK_SECRET` set in the Worker (entitlements fail closed without it)

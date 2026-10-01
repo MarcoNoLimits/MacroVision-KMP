@@ -46,14 +46,14 @@ Last Updated: 2026-09-22
   - Typed result mapping: 401 → `AnalyzeResult.AuthRequired`, 402/quota_exhausted → `AnalyzeResult.QuotaExhausted`
 - `NutritionClient.kt`: `analyzeMealImageWithResult()` added with default delegation
 - `PlatformConfig.kt`, `PlatformConfig.android.kt`, `PlatformConfig.ios.kt`: removed `openRouterApiKey`, `geminiApiKey`, `groqApiKey`; added `gatewayUrl`, `supabaseUrl`, `supabaseAnonKey`
-- `MacroVision-UI/build.gradle.kts`: removed `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `GROQ_API_KEY` `buildConfigField`s
+- `FitCal-UI/build.gradle.kts`: removed `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `GROQ_API_KEY` `buildConfigField`s
 - `iosApp/Configuration/Config.xcconfig`: live VLM keys removed
 - `iosApp/iosApp/Info.plist`: removed `OpenRouterApiKey`, `GeminiApiKey`, `GroqApiKey`
 - `iosApp/generate_config.sh`: allowlist-only (only GATEWAY_URL, SUPABASE_URL, SUPABASE_ANON_KEY copied)
 - `App.kt`: `FailoverNutritionClient` replaced with `GatewayNutritionClient` wired to `authService.currentSession()?.accessToken`; auth boot gates all side-effects on `ensureSignedIn()`; `isMockMode = false`
 - **Verification:**
   - `BuildConfig.java` verified clean: contains only `GATEWAY_URL`, `SUPABASE_URL`, `SUPABASE_ANON_KEY` ✅
-  - Full codebase grep for `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `GROQ_API_KEY` across `MacroVision-UI/`, `shared/`, `iosApp/` → zero results ✅
+  - Full codebase grep for `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `GROQ_API_KEY` across `FitCal-UI/`, `shared/`, `iosApp/` → zero results ✅
   - `E2EJourneyTest` → 4/4 tests PASS ✅
 
 ---
@@ -146,7 +146,7 @@ Last Updated: 2026-09-22
   - `npm test` in `worker/`: 11/11 tests PASS ✅
   - `npx tsc --noEmit` in `worker/`: exit 0 ✅
   - `:shared:testDebugUnitTest`: 30/30 tests PASS (including `SupabaseClientFactoryTest`) ✅
-  - `:MacroVision-UI:testDebugUnitTest`: 40/40 tests PASS (including 13 `ScanQuotaManagerTest` tests, 4 `E2EJourneyTest` tests) ✅
+  - `:FitCal-UI:testDebugUnitTest`: 40/40 tests PASS (including 13 `ScanQuotaManagerTest` tests, 4 `E2EJourneyTest` tests) ✅
   - Total tests across KMP: 70/70 PASS ✅
 
 ---
@@ -157,7 +157,7 @@ Last Updated: 2026-09-22
 |---|---|---|---|
 | `worker` TypeScript (`npx tsc --noEmit`) | N/A | Exit 0 | ✅ PASS |
 | `worker` Unit Tests (`npm test`) | 11 | 11/11 PASS | ✅ PASS |
-| `:MacroVision-UI:testDebugUnitTest` | 40 | 40/40 PASS | ✅ PASS |
+| `:FitCal-UI:testDebugUnitTest` | 40 | 40/40 PASS | ✅ PASS |
 | └─ `ScanQuotaManagerTest` | 13 | 13/13 PASS | ✅ PASS |
 | └─ `E2EJourneyTest` | 4 | 4/4 PASS | ✅ PASS |
 | └─ `MealIdTest` | 4 | 4/4 PASS | ✅ PASS |
@@ -183,7 +183,7 @@ Last Updated: 2026-09-22
 
 
 ## 2026-09-22 — v3 review run (Cypher)
-- Ran `./gradlew :shared:compileDebugKotlinAndroid :MacroVision-UI:compileDebugKotlinAndroid :MacroVision-UI:testDebugUnitTest --rerun-tasks` → BUILD SUCCESSFUL in 16s, 44 executed.
+- Ran `./gradlew :shared:compileDebugKotlinAndroid :FitCal-UI:compileDebugKotlinAndroid :FitCal-UI:testDebugUnitTest --rerun-tasks` → BUILD SUCCESSFUL in 16s, 44 executed.
 - Aggregated JUnit XML: 70 tests / 0 failures / 0 errors across 12 suites.
 - `npx tsc --noEmit` in worker/ → exit 0.
 - Attempted `supabase db reset`: blocked — Docker daemon not running (Docker Desktop offline).
@@ -243,7 +243,7 @@ Last Updated: 2026-09-22
   - Clean deletion of test user with zero residue.
 
 **Full Verification Gate Results:**
-- Gradle: `./gradlew :MacroVision-UI:testDebugUnitTest --rerun-tasks` → 44/44 tasks executed, BUILD SUCCESSFUL in 36s (70/70 KMP unit tests pass) ✅
+- Gradle: `./gradlew :FitCal-UI:testDebugUnitTest --rerun-tasks` → 44/44 tasks executed, BUILD SUCCESSFUL in 36s (70/70 KMP unit tests pass) ✅
 - Worker: `npm test` in `worker/` → 11/11 tests pass in 232ms ✅
 - Worker: `npx tsc --noEmit` in `worker/` → exit 0 ✅
 
@@ -279,7 +279,7 @@ Last Updated: 2026-09-22
   - Result: 14/14 tests pass, `npx tsc --noEmit` exit 0.
 
 ### Phase 10: Auth-Chain Reliability & Footgun Elimination
-- **App Auth Boot Gate (`MacroVision-UI/src/commonMain/kotlin/com/fitter/app/App.kt`)**:
+- **App Auth Boot Gate (`FitCal-UI/src/commonMain/kotlin/com/fitter/app/App.kt`)**:
   - Replaced try/catch swallow with bounded backoff retry (3 attempts: 1s, 2s, 4s).
   - OfflineMode state introduced when retries exhaust; scan availability is gated on `authReady`.
   - Recovery observer periodically attempts sign-in restoration and sync re-triggering.
@@ -295,18 +295,18 @@ Last Updated: 2026-09-22
 - **Footgun Elimination**:
   - `PlatformConfig.ios.kt`: removed placeholder URL and anon key (`"https://placeholder-project.supabase.co"`, `"eyJhbG...VCJ9.e30.anon"`).
   - `SupabaseClientFactory.kt`: removed `DEFAULT_ANON_KEY` placeholder JWT; added runtime validation rejecting `placeholder` strings or fake tokens.
-  - `MacroVision-UI/build.gradle.kts`: build-time check enforcing that `GATEWAY_URL`, `SUPABASE_URL`, and `SUPABASE_ANON_KEY` are present and non-blank, throwing `GradleException` if placeholder signatures (`placeholder`, `eyJhbG...VCJ9.e30.anon`, `your_`) are detected.
+  - `FitCal-UI/build.gradle.kts`: build-time check enforcing that `GATEWAY_URL`, `SUPABASE_URL`, and `SUPABASE_ANON_KEY` are present and non-blank, throwing `GradleException` if placeholder signatures (`placeholder`, `eyJhbG...VCJ9.e30.anon`, `your_`) are detected.
 - **New Unit Tests**:
-  - `MacroVision-UI/src/commonTest/kotlin/com/fitter/app/ScanGateTest.kt` (5 tests) ✅
+  - `FitCal-UI/src/commonTest/kotlin/com/fitter/app/ScanGateTest.kt` (5 tests) ✅
   - `shared/src/commonTest/kotlin/com/fitter/shared/auth/SupabaseAuthServiceTest.kt` (4 tests) ✅
   - `shared/src/commonTest/kotlin/com/fitter/shared/api/GatewayNutritionClientTest.kt` (6 tests) ✅
 
 ### Gate Execution Results
 1. Gradle Gate:
    ```bash
-   $env:JAVA_HOME = 'C:\Program Files\Android\Android Studio1\jbr'; .\gradlew :MacroVision-UI:testDebugUnitTest --rerun-tasks
+   $env:JAVA_HOME = 'C:\Program Files\Android\Android Studio1\jbr'; .\gradlew :FitCal-UI:testDebugUnitTest --rerun-tasks
    # 44 actionable tasks: 44 executed, BUILD SUCCESSFUL in 22s
-   # MacroVision-UI unit tests: 48 passed, 0 failed, 0 errors
+   # FitCal-UI unit tests: 48 passed, 0 failed, 0 errors
    ```
 2. Shared Library Unit Tests:
    ```bash
@@ -326,6 +326,6 @@ Last Updated: 2026-09-22
 
 
 ## 2026-09-23 — v4 verification + wiring fix (Cypher)
-- Ran: ./gradlew :MacroVision-UI:testDebugUnitTest --rerun-tasks -> BUILD SUCCESSFUL 44/44 (36s); worker npm test -> 14/14; tsc clean. 88 Kotlin tests / 0 fail / 0 err (GatewayNutritionClientTest 6, SupabaseAuthServiceTest 4, ScanGateTest 5 confirmed).
+- Ran: ./gradlew :FitCal-UI:testDebugUnitTest --rerun-tasks -> BUILD SUCCESSFUL 44/44 (36s); worker npm test -> 14/14; tsc clean. 88 Kotlin tests / 0 fail / 0 err (GatewayNutritionClientTest 6, SupabaseAuthServiceTest 4, ScanGateTest 5 confirmed).
 - PATCHED App.kt: GatewayNutritionClient now receives reAuthenticator = { authService.ensureSignedIn() } (was omitted -> re-auth dead code).
 - Note: intermediate build failure was transient Windows file-lock (shared bundleLibRuntimeToJarDebug classes.jar in use) resolved by gradlew --stop + rerun. NOT a code issue.

@@ -26,5 +26,5 @@
 ## Definition of done
 
 - All 8 phases' acceptance criteria in FITTER-BACKEND-TASK.md verified by real run output (logged in progress.md).
-- `./gradlew :MacroVision-UI:testDebugUnitTest` green.
+- `./gradlew :FitCal-UI:testDebugUnitTest` green.
 - AGENTS.md Tasks 8/9/10 ticked once complete.

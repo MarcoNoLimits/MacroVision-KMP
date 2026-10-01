@@ -28,7 +28,7 @@ interface JwksResponse {
 }
 
 const JWKS_CACHE_TTL_SECONDS = 3600; // 1 hour
-const JWKS_CACHE_KEY = "fitter:jwks_cache";
+const JWKS_CACHE_KEY = "fitcal:jwks_cache";
 
 /**
  * Base64url decode to Uint8Array.

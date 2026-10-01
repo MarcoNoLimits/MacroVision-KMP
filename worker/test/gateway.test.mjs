@@ -30,12 +30,16 @@ class MockKV {
 
 function createTestEnv(overrides = {}) {
   const kv = new MockKV();
+  const envVal = overrides.FITCAL_ENV || overrides.FITTER_ENV || "dev";
+  const killSwitchVal = overrides.FITCAL_KILL_SWITCH || overrides.FITTER_KILL_SWITCH;
   return {
     VLM_CACHE: kv,
     SUPABASE_URL: "https://test-project.supabase.co",
     SUPABASE_SERVICE_ROLE_KEY: "test-service-role-key",
     REVENUECAT_WEBHOOK_SECRET: "test-revenuecat-secret",
-    FITTER_ENV: "dev",
+    FITCAL_ENV: envVal,
+    FITTER_ENV: envVal,
+    ...(killSwitchVal ? { FITCAL_KILL_SWITCH: killSwitchVal, FITTER_KILL_SWITCH: killSwitchVal } : {}),
     ...overrides,
   };
 }
@@ -44,7 +48,7 @@ function createTestEnv(overrides = {}) {
 
 test("GET /health returns 200 and healthy status without leaking internals", async () => {
   const env = createTestEnv();
-  const req = new Request("https://gateway.fitter.app/health");
+  const req = new Request("https://gateway.fitcal.app/health");
   const res = await gateway.fetch(req, env);
 
   assert.equal(res.status, 200);
@@ -57,7 +61,7 @@ test("GET /health returns 200 and healthy status without leaking internals", asy
 
 test("GET /privacy returns 200 with HTML privacy policy", async () => {
   const env = createTestEnv();
-  const req = new Request("https://gateway.fitter.app/privacy");
+  const req = new Request("https://gateway.fitcal.app/privacy");
   const res = await gateway.fetch(req, env);
 
   assert.equal(res.status, 200);
@@ -69,7 +73,7 @@ test("GET /privacy returns 200 with HTML privacy policy", async () => {
 
 test("GET /health does not reflect a wildcard CORS origin", async () => {
   const env = createTestEnv();
-  const req = new Request("https://gateway.fitter.app/health", {
+  const req = new Request("https://gateway.fitcal.app/health", {
     headers: { Origin: "https://evil.example" },
   });
   const res = await gateway.fetch(req, env);
@@ -79,35 +83,35 @@ test("GET /health does not reflect a wildcard CORS origin", async () => {
 });
 
 test("GET /health reflects an explicitly allowlisted origin", async () => {
-  const env = createTestEnv({ ALLOWED_ORIGINS: "https://app.fitter.app" });
-  const req = new Request("https://gateway.fitter.app/health", {
-    headers: { Origin: "https://app.fitter.app" },
+  const env = createTestEnv({ ALLOWED_ORIGINS: "https://app.fitcal.app" });
+  const req = new Request("https://gateway.fitcal.app/health", {
+    headers: { Origin: "https://app.fitcal.app" },
   });
   const res = await gateway.fetch(req, env);
 
-  assert.equal(res.headers.get("Access-Control-Allow-Origin"), "https://app.fitter.app");
+  assert.equal(res.headers.get("Access-Control-Allow-Origin"), "https://app.fitcal.app");
   assert.equal(res.headers.get("Vary"), "Origin");
 });
 
 test("RevenueCat webhook fails closed when the secret is missing in production", async () => {
-  const env = createTestEnv({ FITTER_ENV: "production" });
+  const env = createTestEnv({ FITCAL_ENV: "production" });
   delete env.REVENUECAT_WEBHOOK_SECRET;
-  const req = new Request("https://gateway.fitter.app/v1/webhook/revenuecat", {
+  const req = new Request("https://gateway.fitcal.app/v1/webhook/revenuecat", {
     method: "POST",
     body: JSON.stringify({
-      event: { app_user_id: "attacker", entitlement_id: "fitter_premium", type: "INITIAL_PURCHASE" },
+      event: { app_user_id: "attacker", entitlement_id: "fitcal_premium", type: "INITIAL_PURCHASE" },
     }),
   });
   const res = await gateway.fetch(req, env);
 
   assert.equal(res.status, 503);
   // The forged entitlement must NOT have been written.
-  assert.equal(await env.VLM_CACHE.get(`entitlement:attacker:fitter_premium`), null);
+  assert.equal(await env.VLM_CACHE.get(`entitlement:attacker:fitcal_premium`), null);
 });
 
 test("Kill switch returns 503 when active", async () => {
-  const env = createTestEnv({ FITTER_KILL_SWITCH: "true" });
-  const req = new Request("https://gateway.fitter.app/health");
+  const env = createTestEnv({ FITCAL_KILL_SWITCH: "true" });
+  const req = new Request("https://gateway.fitcal.app/health");
   const res = await gateway.fetch(req, env);
 
   assert.equal(res.status, 503);
@@ -117,7 +121,7 @@ test("Kill switch returns 503 when active", async () => {
 
 test("POST /v1/analyze-meal rejects unauthenticated request with 401", async () => {
   const env = createTestEnv();
-  const req = new Request("https://gateway.fitter.app/v1/analyze-meal", {
+  const req = new Request("https://gateway.fitcal.app/v1/analyze-meal", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ image_base64: "base64data" }),
@@ -131,7 +135,7 @@ test("POST /v1/analyze-meal rejects unauthenticated request with 401", async () 
 
 test("POST /v1/recalculate rejects unauthenticated request with 401", async () => {
   const env = createTestEnv();
-  const req = new Request("https://gateway.fitter.app/v1/recalculate", {
+  const req = new Request("https://gateway.fitcal.app/v1/recalculate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ items: [{ name: "Oats", grams: 100 }] }),
@@ -145,7 +149,7 @@ test("POST /v1/recalculate rejects unauthenticated request with 401", async () =
 
 test("POST /v1/account/delete requires authentication (Play account-deletion path)", async () => {
   const env = createTestEnv();
-  const req = new Request("https://gateway.fitter.app/v1/account/delete", {
+  const req = new Request("https://gateway.fitcal.app/v1/account/delete", {
     method: "POST",
     body: JSON.stringify({ confirm: true }),
   });
@@ -156,7 +160,7 @@ test("POST /v1/account/delete requires authentication (Play account-deletion pat
 
 test("POST /v1/account/delete rejects a forged user_id in the body", async () => {
   const env = createTestEnv();
-  const req = new Request("https://gateway.fitter.app/v1/account/delete", {
+  const req = new Request("https://gateway.fitcal.app/v1/account/delete", {
     method: "POST",
     headers: { Authorization: "Bearer malformed.jwt.token" },
     body: JSON.stringify({ confirm: true, user_id: "someone-else" }),
@@ -169,7 +173,7 @@ test("POST /v1/account/delete rejects a forged user_id in the body", async () =>
 
 test("GET /v1/entitlements rejects unauthenticated request with 401", async () => {
   const env = createTestEnv();
-  const req = new Request("https://gateway.fitter.app/v1/entitlements");
+  const req = new Request("https://gateway.fitcal.app/v1/entitlements");
   const res = await gateway.fetch(req, env);
 
   assert.equal(res.status, 401);
@@ -179,7 +183,7 @@ test("GET /v1/entitlements rejects unauthenticated request with 401", async () =
 
 test("Malformed JWT is rejected with 401", async () => {
   const env = createTestEnv();
-  const req = new Request("https://gateway.fitter.app/v1/entitlements", {
+  const req = new Request("https://gateway.fitcal.app/v1/entitlements", {
     headers: { Authorization: "Bearer this.is.an.invalid.token" },
   });
   const res = await gateway.fetch(req, env);
@@ -189,13 +193,13 @@ test("Malformed JWT is rejected with 401", async () => {
   assert.equal(data.error, "Unauthorized");
 });
 
-test("Spoofed x-fitter-premium header is NOT trusted (rejected with 401)", async () => {
+test("Spoofed x-fitcal-premium header is NOT trusted (rejected with 401)", async () => {
   const env = createTestEnv();
-  const req = new Request("https://gateway.fitter.app/v1/analyze-meal", {
+  const req = new Request("https://gateway.fitcal.app/v1/analyze-meal", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-fitter-premium": "true", // Spoofed client header
+      "x-fitcal-premium": "true", // Spoofed client header
     },
     body: JSON.stringify({ image_base64: "base64data" }),
   });
@@ -207,7 +211,7 @@ test("Spoofed x-fitter-premium header is NOT trusted (rejected with 401)", async
 
 test("RevenueCat webhook rejects request with invalid signature", async () => {
   const env = createTestEnv();
-  const req = new Request("https://gateway.fitter.app/v1/webhook/revenuecat", {
+  const req = new Request("https://gateway.fitcal.app/v1/webhook/revenuecat", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -217,7 +221,7 @@ test("RevenueCat webhook rejects request with invalid signature", async () => {
       event: {
         type: "INITIAL_PURCHASE",
         app_user_id: "user-123",
-        entitlement_id: "fitter_premium",
+        entitlement_id: "fitcal_premium",
       },
     }),
   });
@@ -236,7 +240,7 @@ test("RevenueCat webhook with valid HMAC-SHA256 signature updates entitlement in
     event: {
       type: "INITIAL_PURCHASE",
       app_user_id: "user-sub-456",
-      entitlement_id: "fitter_premium",
+      entitlement_id: "fitcal_premium",
     },
   });
 
@@ -252,7 +256,7 @@ test("RevenueCat webhook with valid HMAC-SHA256 signature updates entitlement in
   const signatureBytes = await crypto.subtle.sign("HMAC", key, encoder.encode(payload));
   const base64Signature = btoa(String.fromCharCode(...new Uint8Array(signatureBytes)));
 
-  const req = new Request("https://gateway.fitter.app/v1/webhook/revenuecat", {
+  const req = new Request("https://gateway.fitcal.app/v1/webhook/revenuecat", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -265,9 +269,9 @@ test("RevenueCat webhook with valid HMAC-SHA256 signature updates entitlement in
   assert.equal(res.status, 200);
 
   // Check KV cache was updated with 1h TTL
-  const kvValue = await env.VLM_CACHE.get("entitlement:user-sub-456:fitter_premium");
+  const kvValue = await env.VLM_CACHE.get("entitlement:user-sub-456:fitcal_premium");
   assert.equal(kvValue, "active");
-  assert.equal(env.VLM_CACHE.expirations.get("entitlement:user-sub-456:fitter_premium"), 3600);
+  assert.equal(env.VLM_CACHE.expirations.get("entitlement:user-sub-456:fitcal_premium"), 3600);
 });
 
 test("RevenueCat webhook with cancellation event expires entitlement in KV", async () => {
@@ -278,7 +282,7 @@ test("RevenueCat webhook with cancellation event expires entitlement in KV", asy
     event: {
       type: "CANCELLATION",
       app_user_id: "user-sub-456",
-      entitlement_id: "fitter_premium",
+      entitlement_id: "fitcal_premium",
     },
   });
 
@@ -293,7 +297,7 @@ test("RevenueCat webhook with cancellation event expires entitlement in KV", asy
   const signatureBytes = await crypto.subtle.sign("HMAC", key, encoder.encode(payload));
   const base64Signature = btoa(String.fromCharCode(...new Uint8Array(signatureBytes)));
 
-  const req = new Request("https://gateway.fitter.app/v1/webhook/revenuecat", {
+  const req = new Request("https://gateway.fitcal.app/v1/webhook/revenuecat", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -305,11 +309,11 @@ test("RevenueCat webhook with cancellation event expires entitlement in KV", asy
   const res = await gateway.fetch(req, env);
   assert.equal(res.status, 200);
 
-  const kvValue = await env.VLM_CACHE.get("entitlement:user-sub-456:fitter_premium");
+  const kvValue = await env.VLM_CACHE.get("entitlement:user-sub-456:fitcal_premium");
   assert.equal(kvValue, "expired");
 });
 
-test("consumeScanServerSide sends fitter profile headers, p_user_id, and no fake header", async () => {
+test("consumeScanServerSide sends fitcal profile headers, p_user_id, and no fake header", async () => {
   const env = createTestEnv();
   const originalFetch = globalThis.fetch;
   let interceptedUrl = null;
@@ -328,8 +332,8 @@ test("consumeScanServerSide sends fitter profile headers, p_user_id, and no fake
     const result = await consumeScanServerSide(env, "target-user-123", 5);
     assert.equal(result, true);
     assert.equal(interceptedUrl, "https://test-project.supabase.co/rest/v1/rpc/consume_scan");
-    assert.equal(interceptedOptions.headers["Accept-Profile"], "fitter");
-    assert.equal(interceptedOptions.headers["Content-Profile"], "fitter");
+    assert.equal(interceptedOptions.headers["Accept-Profile"], "fitcal");
+    assert.equal(interceptedOptions.headers["Content-Profile"], "fitcal");
     assert.equal(interceptedOptions.headers["X-Supabase-Auth-User-Id"], undefined);
     assert.equal(interceptedOptions.headers["apikey"], "test-service-role-key");
     assert.equal(interceptedOptions.headers["Authorization"], "Bearer test-service-role-key");
@@ -354,7 +358,7 @@ test("Phase 9 (a): VLM_PRIMARY_PROVIDER=openrouter calls OpenRouter before Gemin
     OPENROUTER_API_KEY: "test-openrouter-key",
     VLM_PRIMARY_PROVIDER: "openrouter",
     VLM_ALLOW_FALLBACK: "true",
-    FITTER_ENV: "dev",
+    FITCAL_ENV: "dev",
   });
 
   const originalFetch = globalThis.fetch;
@@ -417,7 +421,7 @@ test("Phase 9 (b): VLM_ALLOW_FALLBACK=false prevents Gemini from being called on
     OPENROUTER_API_KEY: "test-openrouter-key",
     VLM_PRIMARY_PROVIDER: "openrouter",
     VLM_ALLOW_FALLBACK: "false",
-    FITTER_ENV: "dev",
+    FITCAL_ENV: "dev",
   });
 
   const originalFetch = globalThis.fetch;
@@ -473,7 +477,7 @@ test("Phase 9 (c): Missing OpenRouter key with fallback=true uses Gemini", async
     // OPENROUTER_API_KEY intentionally absent
     VLM_PRIMARY_PROVIDER: "openrouter",
     VLM_ALLOW_FALLBACK: "true",
-    FITTER_ENV: "dev",
+    FITCAL_ENV: "dev",
   });
 
   const originalFetch = globalThis.fetch;
@@ -521,7 +525,7 @@ test("checkQuotaServerSide grants Week-1 allowance (5) when first_install_date i
 
   globalThis.fetch = async (url, options) => {
     assert.equal(url, "https://test-project.supabase.co/rest/v1/rpc/get_scan_quota");
-    assert.equal(options.headers["Accept-Profile"], "fitter");
+    assert.equal(options.headers["Accept-Profile"], "fitcal");
     return new Response(
       JSON.stringify({
         used: 3,

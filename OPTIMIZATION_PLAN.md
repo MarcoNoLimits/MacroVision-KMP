@@ -13,7 +13,7 @@
 ### 2. Deployment Checklist (App Store Finalization) [DONE]
 - [x] Ensure privacy consent dialogs align with international regulations (AppLovin CMP / Google UMP integration in `MainActivity.kt`, iOS `NSUserTrackingUsageDescription` in `Info.plist`, explicit `android:usesCleartextTraffic="false"` and `ACCESS_NETWORK_STATE` in `AndroidManifest.xml`).
 - [x] Fully test and prepare Ad mediation dashboards for AppLovin MAX settings (`applovin_max_admob_certification_guide.md` runbook verified).
-- [x] Production release build signed and verified (`signingConfigs.release` configured in `build.gradle.kts`, `:MacroVision-UI:assembleRelease` passing).
+- [x] Production release build signed and verified (`signingConfigs.release` configured in `build.gradle.kts`, `:FitCal-UI:bundleRelease` passing).
   
 ### 3. Post-Production Observability Targets
 - [x] Automate telemetry on App Open ad fill rate via MAX SDK backend data (`AdTelemetryManager` with live request, loaded, impression, fill rate, and MAX `MaxAdRevenueListener` bridging to eCPM/ARPDAU metrics).

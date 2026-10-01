@@ -19,7 +19,7 @@
 ### 1. Repository Pattern & Decoupled Storage Layer
 
 #### Problem in Current Codebase
-In `MacroVision-UI/src/commonMain/kotlin/com/fitter/app/App.kt` (lines 140–195), the entire meal history is serialized as a single monolithic JSON string to `SharedPreferences` on every save (`saveMealsList`). Linear scans are performed over all history to filter a single day's intake.
+In `FitCal-UI/src/commonMain/kotlin/com/fitter/app/App.kt` (lines 140–195), the entire meal history is serialized as a single monolithic JSON string to `SharedPreferences` on every save (`saveMealsList`). Linear scans are performed over all history to filter a single day's intake.
 
 #### Antigravity Implementation Contract
 
@@ -145,8 +145,8 @@ interface UserRepository {
 
 - **Objective:** Establish bulletproof security policies, robust ProGuard/R8 rules for KMP serialization, and comprehensive unit testing for quota/monetization logic.
 - **Target Files:**
-  - `MacroVision-UI/proguard-rules.pro`
-  - `MacroVision-UI/src/commonTest/kotlin/com/fitter/app/ScanQuotaManagerTest.kt`
+  - `FitCal-UI/proguard-rules.pro`
+  - `FitCal-UI/src/commonTest/kotlin/com/fitter/app/ScanQuotaManagerTest.kt`
   - `shared/src/commonMain/kotlin/com/fitter/shared/security/`
 
 ### 1. Security & Credential Isolation

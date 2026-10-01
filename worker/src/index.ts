@@ -19,10 +19,14 @@ export interface Env {
   // are unaffected because they send no Origin header.
   ALLOWED_ORIGINS?: string;
   // Operational flags
+  FITCAL_KILL_SWITCH?: string;
   FITTER_KILL_SWITCH?: string;
   KILL_SWITCH?: string;
   // "dev" → mock responses allowed when keys missing; any other value → 500 on missing keys
+  FITCAL_ENV?: string;
   FITTER_ENV?: string;
+  // Supabase PostgREST schema (defaults to "fitcal" with fallback to "fitter")
+  SUPABASE_SCHEMA?: string;
   // Phase 9: Provider routing
   // Primary VLM provider: "openrouter" (default) | "gemini" | "groq" | "mock"
   VLM_PRIMARY_PROVIDER?: string;
@@ -169,7 +173,7 @@ function err401(message = "Authentication required"): Response {
 
 function err402Quota(): Response {
   return jsonResponse(
-    { error: "quota_exhausted", message: "Daily scan quota exceeded. Upgrade to Fitter Premium for unlimited scans." },
+    { error: "quota_exhausted", message: "Daily scan quota exceeded. Upgrade to FitCal Premium for unlimited scans." },
     402
   );
 }
@@ -206,7 +210,7 @@ function validateAndFormatNutritionResponse(parsed: any): NutritionResponse {
       carbs_g: parseFloat(Number(rawTotals.carbs_g ?? calculatedCarbs).toFixed(1)),
       fat_g: parseFloat(Number(rawTotals.fat_g ?? calculatedFat).toFixed(1)),
     },
-    estimation_notes: String(parsed.estimation_notes || "Estimated by Fitter AI Gateway"),
+    estimation_notes: String(parsed.estimation_notes || "Estimated by FitCal AI Gateway"),
   };
 }
 
@@ -267,16 +271,42 @@ async function enforceRateLimit(
 // ─── Entitlement check ────────────────────────────────────────────────────────
 
 /**
- * Check if the user has an active Fitter Premium entitlement.
+ * Check if the user has an active FitCal Premium entitlement.
  * ONLY reads from KV — never trusts any client-supplied header.
  */
 async function isUserPremium(env: Env, userId: string): Promise<boolean> {
   if (!env.VLM_CACHE) return false;
-  const val = await env.VLM_CACHE.get(`entitlement:${userId}:fitter_premium`);
+  const val = (await env.VLM_CACHE.get(`entitlement:${userId}:fitcal_premium`)) ||
+              (await env.VLM_CACHE.get(`entitlement:${userId}:fitter_premium`));
   return val === "active";
 }
 
 // ─── Server-side quota (service_role RPC) ─────────────────────────────────────
+
+/**
+ * Helper to execute Supabase PostgREST requests with schema fallback.
+ * Uses `env.SUPABASE_SCHEMA` or "fitcal" by default, falling back to "fitter" if 406 Not Acceptable.
+ */
+async function fetchPostgrestWithFallback(
+  url: string,
+  options: RequestInit,
+  env: Env
+): Promise<Response> {
+  const primarySchema = env.SUPABASE_SCHEMA || "fitcal";
+  const rawHeaders: Record<string, string> = {
+    ...(options.headers as Record<string, string> || {}),
+    "Accept-Profile": primarySchema,
+    "Content-Profile": primarySchema,
+  };
+
+  const resp = await fetch(url, { ...options, headers: rawHeaders });
+  if (resp.status === 406 && primarySchema !== "fitter") {
+    rawHeaders["Accept-Profile"] = "fitter";
+    rawHeaders["Content-Profile"] = "fitter";
+    return await fetch(url, { ...options, headers: rawHeaders });
+  }
+  return resp;
+}
 
 /**
  * Check whether the user has remaining scan quota WITHOUT incrementing `used`.
@@ -292,17 +322,19 @@ async function checkQuotaServerSide(
   }
 
   const url = `${env.SUPABASE_URL.replace(/\/$/, "")}/rest/v1/rpc/get_scan_quota`;
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Accept-Profile": "fitter",
-      "Content-Profile": "fitter",
-      "apikey": env.SUPABASE_SERVICE_ROLE_KEY,
-      "Authorization": `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+  const resp = await fetchPostgrestWithFallback(
+    url,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+      },
+      body: JSON.stringify({ p_user_id: userId, p_allowance: allowance }),
     },
-    body: JSON.stringify({ p_user_id: userId, p_allowance: allowance }),
-  });
+    env
+  );
 
   if (!resp.ok) {
     const errText = await resp.text();
@@ -349,17 +381,19 @@ async function consumeScanServerSide(
   }
 
   const url = `${env.SUPABASE_URL.replace(/\/$/, "")}/rest/v1/rpc/consume_scan`;
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Accept-Profile": "fitter",
-      "Content-Profile": "fitter",
-      "apikey": env.SUPABASE_SERVICE_ROLE_KEY,
-      "Authorization": `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+  const resp = await fetchPostgrestWithFallback(
+    url,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+      },
+      body: JSON.stringify({ p_user_id: userId, p_allowance: allowance }),
     },
-    body: JSON.stringify({ p_user_id: userId, p_allowance: allowance }),
-  });
+    env
+  );
 
   if (!resp.ok) {
     const errText = await resp.text();
@@ -401,17 +435,19 @@ async function grantBonusScanServerSide(
   const safeAmount = Math.min(Math.max(Math.floor(amount) || 0, 0), 3);
 
   const url = `${env.SUPABASE_URL.replace(/\/$/, "")}/rest/v1/rpc/grant_bonus_scan`;
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Accept-Profile": "fitter",
-      "Content-Profile": "fitter",
-      apikey: env.SUPABASE_SERVICE_ROLE_KEY,
-      Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+  const resp = await fetchPostgrestWithFallback(
+    url,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+      },
+      body: JSON.stringify({ p_amount: safeAmount, p_user_id: userId }),
     },
-    body: JSON.stringify({ p_amount: safeAmount, p_user_id: userId }),
-  });
+    env
+  );
 
   if (!resp.ok) {
     const errText = await resp.text();
@@ -652,11 +688,13 @@ async function executeVlmFailover(
   // Primary first; fallback order is the remaining providers.
   const fallbackOrder: string[] = ["openrouter", "gemini", "groq"].filter((p) => p !== primaryProvider);
 
+  const isDev = (env.FITCAL_ENV || env.FITTER_ENV) === "dev";
+
   // ── Try primary ───────────────────────────────────────────────────────────────
   if (primaryProvider === "mock") {
     // "mock" primary only allowed in dev mode
-    if (env.FITTER_ENV !== "dev") {
-      throw new Error('VLM_PRIMARY_PROVIDER="mock" requires FITTER_ENV=dev');
+    if (!isDev) {
+      throw new Error('VLM_PRIMARY_PROVIDER="mock" requires FITCAL_ENV=dev');
     }
     return { result: devMockResponse(), provider: "mock" };
   }
@@ -681,7 +719,7 @@ async function executeVlmFailover(
   }
 
   // ── Mock ONLY in dev mode (last resort when no keys are configured) ───────────
-  if (env.FITTER_ENV === "dev") {
+  if (isDev) {
     console.log("[DEV MODE] No VLM keys configured — returning mock response");
     return { result: devMockResponse(), provider: "mock" };
   }
@@ -698,7 +736,7 @@ function devMockResponse(): NutritionResponse {
       { item: "Steamed Broccoli", weight_est_g: 100, calories: 35, protein_g: 2.4, carbs_g: 7.2, fat_g: 0.4, confidence: "high" },
     ],
     totals: { calories: 451, protein_g: 52.8, carbs_g: 42.9, fat_g: 7.2 },
-    estimation_notes: "Generated by Fitter Gateway (Dev Mock — FITTER_ENV=dev)",
+    estimation_notes: "Generated by FitCal Gateway (Dev Mock)",
   };
 }
 
@@ -718,7 +756,7 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
   }
 
     // Kill switch (unauthenticated; checked early before any endpoint)
-    if (env.KILL_SWITCH === "true" || env.FITTER_KILL_SWITCH === "true") {
+    if (env.KILL_SWITCH === "true" || env.FITCAL_KILL_SWITCH === "true" || env.FITTER_KILL_SWITCH === "true") {
       return jsonResponse(
         { error: "Service temporarily unavailable", message: "Kill switch is active." },
         503
@@ -751,7 +789,7 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
         // Fail closed in production: an unverified webhook lets anyone mint premium
         // entitlements for any app_user_id. Dev is the ONLY environment that may skip.
         if (!env.REVENUECAT_WEBHOOK_SECRET) {
-          if ((env.FITTER_ENV || "production") === "dev") {
+          if ((env.FITCAL_ENV || env.FITTER_ENV || "production") === "dev") {
             console.warn("REVENUECAT_WEBHOOK_SECRET not set — signature check SKIPPED (dev only)");
           } else {
             console.error("REVENUECAT_WEBHOOK_SECRET not set in a non-dev environment — rejecting webhook");
@@ -770,7 +808,7 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
 
         const event = (JSON.parse(body) as any).event || {};
         const appUserId = event.app_user_id || event.original_app_user_id;
-        const entitlementId = event.entitlement_id || "fitter_premium";
+        const entitlementId = event.entitlement_id || "fitcal_premium";
         const type: string = event.type || "";
 
         if (appUserId && env.VLM_CACHE) {
@@ -780,6 +818,16 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
           await env.VLM_CACHE.put(`entitlement:${appUserId}:${entitlementId}`, kvValue, {
             expirationTtl: 3600,
           });
+          // Also sync alias key if default
+          if (entitlementId === "fitcal_premium") {
+            await env.VLM_CACHE.put(`entitlement:${appUserId}:fitter_premium`, kvValue, {
+              expirationTtl: 3600,
+            });
+          } else if (entitlementId === "fitter_premium") {
+            await env.VLM_CACHE.put(`entitlement:${appUserId}:fitcal_premium`, kvValue, {
+              expirationTtl: 3600,
+            });
+          }
           console.log(`RevenueCat webhook: user=${appUserId} entitlement=${entitlementId} → ${kvValue}`);
         }
 
@@ -818,7 +866,7 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
         return new Response(
           JSON.stringify({
             error: "Too Many Requests",
-            message: "Rate limit exceeded (20 req/min). Upgrade to Fitter Premium for higher limits.",
+            message: "Rate limit exceeded (20 req/min). Upgrade to FitCal Premium for higher limits.",
           }),
           {
             status: 429,
@@ -947,13 +995,12 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
           "Content-Type": "application/json",
           apikey: env.SUPABASE_SERVICE_ROLE_KEY,
           Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
-          "Accept-Profile": "fitter",
-          "Content-Profile": "fitter",
         };
 
         try {
           // 1. Purge cached data tied to this user (KV holds entitlement + analyses).
           if (env.VLM_CACHE) {
+            await env.VLM_CACHE.delete(`entitlement:${userId}:fitcal_premium`);
             await env.VLM_CACHE.delete(`entitlement:${userId}:fitter_premium`);
             await env.VLM_CACHE.delete(`${userId}:reward`);
           }
@@ -968,10 +1015,14 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
             "user_meta",
             "profiles",
           ]) {
-            const res = await fetch(`${base}/rest/v1/${table}?user_id=eq.${userId}`, {
-              method: "DELETE",
-              headers: authHeaders,
-            });
+            const res = await fetchPostgrestWithFallback(
+              `${base}/rest/v1/${table}?user_id=eq.${userId}`,
+              {
+                method: "DELETE",
+                headers: authHeaders,
+              },
+              env
+            );
             if (!res.ok && res.status !== 404) {
               const detail = await res.text();
               // 409/23503 = FK dependency ordering issue: report, don't claim success.

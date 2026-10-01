@@ -1,4 +1,4 @@
-rootProject.name = "Fitter"
+rootProject.name = "FitCal"
 enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 
 pluginManagement {
@@ -33,4 +33,4 @@ plugins {
 }
 
 include(":shared")
-include(":MacroVision-UI")
+include(":FitCal-UI")

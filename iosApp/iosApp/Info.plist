@@ -49,9 +49,9 @@
 	<key>NSCameraUsageDescription</key>
 		<string>We need camera access to analyze your meals.</string>
 		<key>NSPhotoLibraryUsageDescription</key>
-		<string>Fitter needs access to your photos so you can select a meal picture to analyze.</string>
+		<string>FitCal needs access to your photos so you can select a meal picture to analyze.</string>
 		<key>NSUserTrackingUsageDescription</key>
-		<string>This identifier helps us personalize ads and sponsors in the app. You can decline this in Settings and still use every Fitter feature.</string>
+		<string>This identifier helps us personalize ads and sponsors in the app. You can decline this in Settings and still use every FitCal feature.</string>
 		<key>GADApplicationIdentifier</key>
 		<string>$(GOOGLE_ADS_APP_ID)</string>
 		<key>SKAdNetworkItems</key>

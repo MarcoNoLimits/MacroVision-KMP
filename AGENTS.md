@@ -1,4 +1,4 @@
-# AGENTS.md — Fitter (AI Food Nutrition Scanner)
+# AGENTS.md — FitCal (AI Food Nutrition Scanner)
 
 This file is the authoritative instruction set for any agent (AI or human) working in this repository. Read it fully before making changes.
 
@@ -6,9 +6,9 @@ This file is the authoritative instruction set for any agent (AI or human) worki
 
 ## 1. Project Overview
 
-**Fitter** is a Kotlin Multiplatform (KMP) app that scans meal photos with a Vision-Language Model (VLM) and estimates ingredients, weights, and macronutrients with an interactive correction workflow.
+**FitCal** is a Kotlin Multiplatform (KMP) app that scans meal photos with a Vision-Language Model (VLM) and estimates ingredients, weights, and macronutrients with an interactive correction workflow.
 
-- **Modules**: `:shared` (HTTP clients, models, VLM logic), `:MacroVision-UI` (Compose Multiplatform UI + ads + quotas), `iosApp/` (native iOS wrapper).
+- **Modules**: `:shared` (HTTP clients, models, VLM logic), `:FitCal-UI` (Compose Multiplatform UI + ads + quotas), `iosApp/` (native iOS wrapper).
 - **VLM Pipeline**: OpenRouter (Qwen2.5-VL) → Google Gemini → Groq failover.
 - **Monetization state**: Google AdMob integrated (test IDs in `AdConfig`), daily scan quota system live (`ScanQuotaManager`).
 
@@ -17,7 +17,7 @@ This file is the authoritative instruction set for any agent (AI or human) worki
 1. **Do not read or expose `.env`** — it contains production API keys. Never commit it.
 2. **Do not change monetization behavior** without following Section 5 of this file.
 3. **Do not put ads on the Camera/Scan view.** This is a hard product decision.
-4. Build must pass: `./gradlew :MacroVision-UI:testDebugUnitTest`.
+4. Build must pass: `./gradlew :FitCal-UI:testDebugUnitTest`.
 
 ## 3. Existing Features (Do Not Regress)
 
@@ -41,7 +41,7 @@ This file is the authoritative instruction set for any agent (AI or human) worki
 | 7 | Keep `ScanQuotaManagerTest` green (expanded to 9 tests) | **DONE** | 9/9 passing |
 | 8 | Production Architecture: Secure Serverless Gateway | **DONE** | Edge proxy (Cloudflare Worker), KV semantic cache, rate limit, kill switch, API key isolation |
 | 9 | Commercial VLM Provider Migration (Pay-As-You-Go) | **DONE** | Gemini 2.0 Flash primary with x-goog-api-key header isolation, Qwen/Groq automated edge failover |
-| 10 | Fitter Premium Subscription Paywall (RevenueCat) | **DONE** | $4.99/mo & $39.99/yr plans, entitlement gates ad flow + grants unlimited scans |
+| 10 | FitCal Premium Subscription Paywall (RevenueCat) | **DONE** | $4.99/mo & $39.99/yr plans, entitlement gates ad flow + grants unlimited scans |
 
 ## 5. THE MONETIZATION TASK (Canonical Specification)
 
@@ -119,7 +119,7 @@ When the user has exhausted their free daily quota and attempts another scan:
 2. **Gateway Deployment**:
    - Deploy a lightweight TypeScript Cloudflare Worker (100k free req/day) or Firebase Cloud Function with App Check.
 3. **Subscription Engine (Task 10)**:
-   - Integrate **RevenueCat** for Fitter Premium ($4.99/mo or $39.99/yr) offering ad-free unlimited scans, macro export, and personalized calorie planning.
+   - Integrate **RevenueCat** for FitCal Premium ($4.99/mo or $39.99/yr) offering ad-free unlimited scans, macro export, and personalized calorie planning.
 
 ### 5.10 Definition of Done
 
@@ -129,7 +129,7 @@ When the user has exhausted their free daily quota and attempts another scan:
 - [x] App Open ad respects `sessionCount > 3` + 4h cooldown.
 - [x] Deploy secure serverless gateway proxy (Task 8).
 - [x] Upgrade VLM pipeline to Vertex AI / Gemini 2.0 Flash Pay-As-You-Go with zero data retention (Task 9).
-- [x] Integrate RevenueCat subscription paywall for Fitter Premium (Task 10).
+- [x] Integrate RevenueCat subscription paywall for FitCal Premium (Task 10).
 - [ ] Merge via PR with the monetization spec referenced in the description.
 
 ---
@@ -137,6 +137,6 @@ When the user has exhausted their free daily quota and attempts another scan:
 ## 6. Verification
 
 ```bash
-./gradlew :MacroVision-UI:testDebugUnitTest   # must be green
-./gradlew :MacroVision-UI:installDebug        # smoke-test on device/emulator
+./gradlew :FitCal-UI:testDebugUnitTest   # must be green
+./gradlew :FitCal-UI:installDebug        # smoke-test on device/emulator
 ```

@@ -18,7 +18,7 @@
 **Objective:** One reusable input-field composable, used everywhere, replacing all raw `OutlinedTextField` / `BasicTextField` usages.
 
 **Contract:**
-- Create `MacroVision-UI/src/commonMain/kotlin/com/fitter/app/ui/components/FitterTextField.kt`:
+- Create `FitCal-UI/src/commonMain/kotlin/com/fitter/app/ui/components/FitterTextField.kt`:
   - Wraps `OutlinedTextField`. Suppresses the default M3 border/shape; provides:
     - `shape = RoundedCornerShape(RadiusS)` (12dp)
     - Resting border 1dp `InputBorder` (new token, see G1e), value `TextStyle` 16sp `TextColor`
@@ -38,9 +38,9 @@
   | `ReviewComponents.kt` | 38–77 (`WeightInputPill`) | weight grams | g |
 
 - **Acceptance:**
-  - `grep -rn "OutlinedTextField(" MacroVision-UI/src/commonMain/kotlin --include="*.kt"` → only `FitterTextField.kt`
-  - `grep -rn "BasicTextField" MacroVision-UI/src/commonMain/kotlin --include="*.kt"` → only `FitterTextField.kt`(internals, if used)
-  - `grep -rn "FitterTextField(" MacroVision-UI/src/commonMain/kotlin --include="*.kt"` → Settings ≥ 7, Review ≥ 9
+  - `grep -rn "OutlinedTextField(" FitCal-UI/src/commonMain/kotlin --include="*.kt"` → only `FitterTextField.kt`
+  - `grep -rn "BasicTextField" FitCal-UI/src/commonMain/kotlin --include="*.kt"` → only `FitterTextField.kt`(internals, if used)
+  - `grep -rn "FitterTextField(" FitCal-UI/src/commonMain/kotlin --include="*.kt"` → Settings ≥ 7, Review ≥ 9
   - Build green.
 
 ## G1e — New Theme Token: `InputBorder`
@@ -61,12 +61,12 @@
   - Add min/max captions under the slider: `Text("16 cm", Micro, MutedTextColor)` & `Text("31 cm", Micro, MutedTextColor)` at each end
   - `.shadow(1.dp, RoundedCornerShape(RadiusM))` on the thumb; activeTrack `PrimaryAccent`, inactiveTrack `BorderColor`
 - `onSave` still writes `defaultPlateSize = plateSize` (inches) to `UserProfile` — **unchanged model/API contract**. Add one comment: `// G2: stored in inches; VLM API expects inches (analyzeMealImage)`. 
-- Add `MacroVision-UI/src/commonTest/kotlin/com/fitter/app/PlateSizeTest.kt`: round-trip test — 9.0 in → 22.86 cm → back to 9.0 in (within 0.01); and 23.0 cm → 9.055 in → 23.0 cm. Use a small `plateSizeCmToInches`/`plateSizeInchesToCm` helper (top-level funs in `FitterTextField.kt`'s sibling `ui/components/Units.kt` or inline math in SettingsScreen — your choice, but the helpers must be plain functions unit-testable without a UI session).
+- Add `FitCal-UI/src/commonTest/kotlin/com/fitter/app/PlateSizeTest.kt`: round-trip test — 9.0 in → 22.86 cm → back to 9.0 in (within 0.01); and 23.0 cm → 9.055 in → 23.0 cm. Use a small `plateSizeCmToInches`/`plateSizeInchesToCm` helper (top-level funs in `FitterTextField.kt`'s sibling `ui/components/Units.kt` or inline math in SettingsScreen — your choice, but the helpers must be plain functions unit-testable without a UI session).
 
 - **Acceptance:**
   - `grep -n "inches" ui/screens/settings/SettingsScreen.kt` → 0 (the word must not appear in any user-visible string)
   - `grep -n "2.54" ui/screens/settings/SettingsScreen.kt` → present
-  - `find MacroVision-UI -name "PlateSizeTest.kt"` → exists; `:MacroVision-UI:testDebugUnitTest` runs it green
+  - `find FitCal-UI -name "PlateSizeTest.kt"` → exists; `:FitCal-UI:testDebugUnitTest` runs it green
   - App strings elsewhere unchanged (camera/quota screens keep their wording).
 
 ## G3 — Secondary & Descriptor Text Legibility
@@ -116,7 +116,7 @@
 
 ## Definition of Done (run in order, report each)
 
-1. `export JAVA_HOME="C:/Program Files/Android/Android Studio1/jbr"` then `./gradlew :shared:testDebugUnitTest :MacroVision-UI:testDebugUnitTest` → **BUILD SUCCESSFUL**
+1. `export JAVA_HOME="C:/Program Files/Android/Android Studio1/jbr"` then `./gradlew :shared:testDebugUnitTest :FitCal-UI:testDebugUnitTest` → **BUILD SUCCESSFUL**
 2. Every acceptance grep above → report `OK`/`FAIL` per line
 3. `git status --short` → list only intended files (no stray renames, no `.hermes` churn beyond new files you author)
 4. Visual sanity: for any spot you couldn't verify statically, say so explicitly.

@@ -33,9 +33,9 @@
   - `onSignOut: () -> Unit = {}`
 
 - **Acceptance:**
-  - `grep -n "\"ACCOUNT\"" MacroVision-UI/src/commonMain/kotlin/com/fitter/app/ui/screens/settings/SettingsScreen.kt` → present
-  - `grep -n "onNavigateToAuth" MacroVision-UI/src/commonMain/kotlin/com/fitter/app/ui/screens/settings/SettingsScreen.kt` → present
-  - `grep -n "onSignOut" MacroVision-UI/src/commonMain/kotlin/com/fitter/app/ui/screens/settings/SettingsScreen.kt` → present
+  - `grep -n "\"ACCOUNT\"" FitCal-UI/src/commonMain/kotlin/com/fitter/app/ui/screens/settings/SettingsScreen.kt` → present
+  - `grep -n "onNavigateToAuth" FitCal-UI/src/commonMain/kotlin/com/fitter/app/ui/screens/settings/SettingsScreen.kt` → present
+  - `grep -n "onSignOut" FitCal-UI/src/commonMain/kotlin/com/fitter/app/ui/screens/settings/SettingsScreen.kt` → present
 
 ---
 
@@ -47,7 +47,7 @@
 - `NavRoutes.kt`: add `@Serializable object AuthDestination`.
 - `FitterTextField.kt`: add optional `visualTransformation: VisualTransformation = VisualTransformation.None` parameter (default preserves all existing call sites) so password fields mask input cleanly.
 - `SupabaseAuthService.kt`: expose `signInWithEmail(email, pass)`, `signUpWithEmail(email, pass)`, `signOut()`, `getCurrentUserEmail()`, and `isGuest()` using `io.github.jan.supabase.auth.providers.builtin.Email`. On `signOut()`, sign out of the email session and restore an anonymous guest session (`signInAnonymously()`).
-- Create `MacroVision-UI/src/commonMain/kotlin/com/fitter/app/ui/screens/auth/AuthScreen.kt`:
+- Create `FitCal-UI/src/commonMain/kotlin/com/fitter/app/ui/screens/auth/AuthScreen.kt`:
   - Top bar: 44dp `IconButton` (`Icons.Default.ArrowBack`) + `BrandTypography.ScreenTitle` (`"Sign In"` / `"Create Account"`).
   - Mode toggle (`PressableBox` pills, `heightIn(min = 44.dp)`, `RadiusS`) switching between **Sign In** and **Create Account**.
   - Card with `BrandTypography.CardTitle` (`"EMAIL & PASSWORD"`), two `FitterTextField` inputs:
@@ -59,10 +59,10 @@
   - **"Continue as Guest"** escape button (`OutlinedButton`, `heightIn(min = 48.dp)`, `RadiusM`) → dismisses back to the app without signing in.
 
 - **Acceptance:**
-  - `find MacroVision-UI -name "AuthScreen.kt"` → exists
-  - `grep -n "AuthDestination" MacroVision-UI/src/commonMain/kotlin/com/fitter/app/ui/navigation/NavRoutes.kt` → present
-  - `grep -rn "FitterTextField(" MacroVision-UI/src/commonMain/kotlin/com/fitter/app/ui/screens/auth/ --include="*.kt"` → ≥ 2
-  - `grep -rn "Continue as Guest" MacroVision-UI/src/commonMain/kotlin/com/fitter/app/ui/screens/auth/ --include="*.kt"` → present
+  - `find FitCal-UI -name "AuthScreen.kt"` → exists
+  - `grep -n "AuthDestination" FitCal-UI/src/commonMain/kotlin/com/fitter/app/ui/navigation/NavRoutes.kt` → present
+  - `grep -rn "FitterTextField(" FitCal-UI/src/commonMain/kotlin/com/fitter/app/ui/screens/auth/ --include="*.kt"` → ≥ 2
+  - `grep -rn "Continue as Guest" FitCal-UI/src/commonMain/kotlin/com/fitter/app/ui/screens/auth/ --include="*.kt"` → present
 
 ---
 
@@ -81,14 +81,14 @@
   - **Guest parity:**
     - `startDestination` remains `DashboardDestination` (no auth wall).
     - `showAdsForUser` remains `!SubscriptionManager.isPremiumUser()` — zero reference to `userEmail` or `isGuest` in ad gating or `ScanQuotaManager`.
-- Add unit tests in `MacroVision-UI/src/commonTest/kotlin/com/fitter/app/AccountAuthTest.kt` covering:
+- Add unit tests in `FitCal-UI/src/commonTest/kotlin/com/fitter/app/AccountAuthTest.kt` covering:
   - Email & password validation helpers (`isValidEmail`, `isValidPassword`)
   - Guest-mode scan readiness & ad-load parity (guests get identical free daily limit and ad gating as email-authenticated users)
 
 - **Acceptance:**
-  - `grep -n "composable<AuthDestination>" MacroVision-UI/src/commonMain/kotlin/com/fitter/app/App.kt` → present
-  - `grep -n "showAdsForUser" MacroVision-UI/src/commonMain/kotlin/com/fitter/app/App.kt` → gated only on `isPremiumUser()`
-  - `find MacroVision-UI -name "AccountAuthTest.kt"` → exists and passes
+  - `grep -n "composable<AuthDestination>" FitCal-UI/src/commonMain/kotlin/com/fitter/app/App.kt` → present
+  - `grep -n "showAdsForUser" FitCal-UI/src/commonMain/kotlin/com/fitter/app/App.kt` → gated only on `isPremiumUser()`
+  - `find FitCal-UI -name "AccountAuthTest.kt"` → exists and passes
 
 ---
 
@@ -98,21 +98,21 @@
 
 **Contract:**
 - No raw `OutlinedTextField(` or `BasicTextField(` outside `FitterTextField.kt`.
-- No raw `Color(0x` in `MacroVision-UI/src/commonMain/kotlin/com/fitter/app/ui/screens/` (comments exempt).
+- No raw `Color(0x` in `FitCal-UI/src/commonMain/kotlin/com/fitter/app/ui/screens/` (comments exempt).
 - No `AdBanner` on `CameraScreen` or `ReviewScreen`.
 - `REDUCED_MOTION_ENABLED`, `PressableBox`, `InputBorder`, `CardTitle`, and `PlateSizeTest` remain intact.
 
 - **Acceptance:**
-  - `grep -rn "OutlinedTextField(" MacroVision-UI/src/commonMain/kotlin --include="*.kt"` → only `FitterTextField.kt`
-  - `grep -rn "BasicTextField" MacroVision-UI/src/commonMain/kotlin --include="*.kt"` → only `FitterTextField.kt`
-  - `grep -rn "Color(0x" MacroVision-UI/src/commonMain/kotlin/com/fitter/app/ui/screens/ --include="*.kt"` → 0 (excluding comments)
-  - `grep -rn "AdBanner" MacroVision-UI/src/commonMain/kotlin/com/fitter/app/ui/screens/camera MacroVision-UI/src/commonMain/kotlin/com/fitter/app/ui/screens/review --include="*.kt"` → 0
+  - `grep -rn "OutlinedTextField(" FitCal-UI/src/commonMain/kotlin --include="*.kt"` → only `FitterTextField.kt`
+  - `grep -rn "BasicTextField" FitCal-UI/src/commonMain/kotlin --include="*.kt"` → only `FitterTextField.kt`
+  - `grep -rn "Color(0x" FitCal-UI/src/commonMain/kotlin/com/fitter/app/ui/screens/ --include="*.kt"` → 0 (excluding comments)
+  - `grep -rn "AdBanner" FitCal-UI/src/commonMain/kotlin/com/fitter/app/ui/screens/camera FitCal-UI/src/commonMain/kotlin/com/fitter/app/ui/screens/review --include="*.kt"` → 0
 
 ---
 
 ## Definition of Done (run in order, report each)
 
-1. `export JAVA_HOME="C:/Program Files/Android/Android Studio1/jbr"` then `./gradlew :shared:testDebugUnitTest :MacroVision-UI:testDebugUnitTest` → **BUILD SUCCESSFUL**
+1. `export JAVA_HOME="C:/Program Files/Android/Android Studio1/jbr"` then `./gradlew :shared:testDebugUnitTest :FitCal-UI:testDebugUnitTest` → **BUILD SUCCESSFUL**
 2. Every acceptance grep above → report `OK`/`FAIL` per line
 3. `git status --short` → list only intended files
 4. Note any KMP API substitutions or findings clearly.

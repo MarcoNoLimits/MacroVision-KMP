@@ -1,6 +1,6 @@
 # Deep Field Study: AI Food Recognition & Calorie Estimation Competitor Landscape
 
-This document conducts a technical analysis of the major players in the AI-powered dietary logging space. It analyzes their machine learning pipelines, portion estimation systems, dataset moats, and deployment models to contextualize the development of **MacroVision**.
+This document conducts a technical analysis of the major players in the AI-powered dietary logging space. It analyzes their machine learning pipelines, portion estimation systems, dataset moats, and deployment models to contextualize the development of **FitCal**.
 
 ---
 
@@ -10,7 +10,7 @@ The AI food tracking landscape is undergoing a paradigm shift. Traditional marke
 
 The industry is currently divided into two core architectural approaches:
 1. **Classical Segment-Classify-Lookup Pipelines**: Relying on separate edge/cloud models for item segmentations, CNN-based classifications, and SQL-like database lookups (e.g., Foodvisor, Passio.ai).
-2. **Modern Multi-Modal Vision-Language Models (VLMs)**: Re-imagining nutrition tracking as an end-to-end semantic reasoning problem, predicting ingredients, cooking styles, weights, and hidden fats directly from visual inputs (e.g., MacroVision's use of Qwen2.5-VL, SnapCalorie's hybrid VLM reasoning).
+2. **Modern Multi-Modal Vision-Language Models (VLMs)**: Re-imagining nutrition tracking as an end-to-end semantic reasoning problem, predicting ingredients, cooking styles, weights, and hidden fats directly from visual inputs (e.g., FitCal's use of Qwen2.5-VL, SnapCalorie's hybrid VLM reasoning).
 
 ---
 
@@ -23,7 +23,7 @@ The industry is currently divided into two core architectural approaches:
 | **Foodvisor** | Multi-Task CNN (Classification + Mask R-CNN) | Cloud API | Geometric projection (3D volume from 2D coordinates) | ~1.5–3s | Strong European database localization (CIQUAL); high-quality user UI. |
 | **Lose It!** (Snap It) | Standard CNN classifier + LLM-based parsing | Cloud API | Manual confirmation + 2D area scaling | ~10–12s | Massive historical user base; simple single-ingredient accuracy. |
 | **Bite AI** (Bitesnap API) | Hierarchical Vision Models + Contextual Ranking | Cloud API | User-corrected bounding boxes | ~1–2s | Food Knowledge Graph; temporal context (time of day, history) ranking. |
-| **MacroVision** (Our App) | **Qwen2.5-VL-72B-Instruct** (Vision-Language Model) | Cloud API (OpenRouter) | Zero-Shot VLM Semantic Reasoning + Interactive Weight Pills | ~2–3s | Zero-config setup; deep semantic understanding (hidden fats, dressings); multi-item flexibility. |
+| **FitCal** (Our App) | **Qwen2.5-VL-72B-Instruct** (Vision-Language Model) | Cloud API (OpenRouter) | Zero-Shot VLM Semantic Reasoning + Interactive Weight Pills | ~2–3s | Zero-config setup; deep semantic understanding (hidden fats, dressings); multi-item flexibility. |
 
 ---
 
@@ -62,7 +62,7 @@ graph TD
 
 ## Contrasting Paradigms: Traditional CV vs. Modern VLMs
 
-MacroVision's use of **OpenRouter's Qwen2.5-VL-72B-Instruct** bypasses the traditional multi-stage pipeline (detection -> segmentation -> database lookup -> heuristic portion scaling) in favor of **End-to-End VLM Reasoning**.
+FitCal's use of **OpenRouter's Qwen2.5-VL-72B-Instruct** bypasses the traditional multi-stage pipeline (detection -> segmentation -> database lookup -> heuristic portion scaling) in favor of **End-to-End VLM Reasoning**.
 
 ```
 TRADITIONAL PIPELINE:
@@ -79,13 +79,13 @@ VLM PARADIGM:
 
 ### Technical Challenges of the VLM Approach
 *   **Latency:** VLM API requests take 1–3 seconds, whereas edge-AI classification takes <50ms.
-*   **Spatial Blindness:** VLMs sometimes struggle with exact scale and depth without reference objects. This is why MacroVision's **interactive weight pills** are an essential UX bridge: the AI estimates the relative proportions, but the user can easily fine-tune the absolute weights.
+*   **Spatial Blindness:** VLMs sometimes struggle with exact scale and depth without reference objects. This is why FitCal's **interactive weight pills** are an essential UX bridge: the AI estimates the relative proportions, but the user can easily fine-tune the absolute weights.
 
 ---
 
-## Key Takeaways for MacroVision's Roadmap
+## Key Takeaways for FitCal's Roadmap
 
-To maintain a competitive edge, MacroVision should capitalize on the following design decisions:
+To maintain a competitive edge, FitCal should capitalize on the following design decisions:
 
 1.  **Refine the VLM Prompting Heuristics**: Our system prompt must instruct the VLM to explicitly look for **hidden ingredients** (fats, oils, dressings) and reference standard portion sizes (e.g., "a deck of cards size for steak represents ~100g") to mitigate spatial estimation issues.
 2.  **Edge-Cloud Hybridization**: In future versions, we can implement a lightweight on-device classifier (like MobileNet) to give immediate visual feedback in the viewfinder (Passio-style), while delegating the deep nutritional reasoning and ingredient breakdown to the cloud VLM on capture.

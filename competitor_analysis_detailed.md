@@ -1,6 +1,6 @@
-# In-Depth Research Study: AI Food Tracking Landscapes & MacroVision Gap Analysis
+# In-Depth Research Study: AI Food Tracking Landscapes & FitCal Gap Analysis
 
-This document presents a comprehensive technical and experience study of the leading AI-powered food tracking applications in the market: **MyFitnessPal**, **Lose It!**, **Cronometer**, **Yazio**, **Foodvisor**, and **Lifesum**. It contrasts their computer vision pipelines, database structures, correction workflows, and user experiences to contextualize the development roadmap for **MacroVision**.
+This document presents a comprehensive technical and experience study of the leading AI-powered food tracking applications in the market: **MyFitnessPal**, **Lose It!**, **Cronometer**, **Yazio**, **Foodvisor**, and **Lifesum**. It contrasts their computer vision pipelines, database structures, correction workflows, and user experiences to contextualize the development roadmap for **FitCal**.
 
 ---
 
@@ -10,9 +10,9 @@ The consumer nutrition tracking industry has reached an inflection point. The tr
 
 Currently, the market is split into two primary paradigms:
 1. **Traditional Computer Vision (CV) + DB Lookup**: Apps like MyFitnessPal, Foodvisor, and Lose It! rely on on-device or cloud CNNs/segmentation models to classify foods, which are then used as queries to search SQL databases. Portion size is estimated geometrically or via bounding-box dimensions.
-2. **Generative Multi-Modal Reasoning (VLMs)**: A new vanguard of apps, including MacroVision, leverages large Vision-Language Models (e.g., Qwen2.5-VL, Gemini 1.5, Llama 3.2 Vision) to bypass multi-stage pipeline bottlenecks. These models reason holistically about the meal (detecting preparation style, hidden fats, and ingredients) in a single zero-shot step.
+2. **Generative Multi-Modal Reasoning (VLMs)**: A new vanguard of apps, including FitCal, leverages large Vision-Language Models (e.g., Qwen2.5-VL, Gemini 1.5, Llama 3.2 Vision) to bypass multi-stage pipeline bottlenecks. These models reason holistically about the meal (detecting preparation style, hidden fats, and ingredients) in a single zero-shot step.
 
-To secure a defensible product-market fit, **MacroVision** must address the visual estimation errors ("spatial blindness") inherent to VLMs and transition from purely hallucinated LLM estimations to verified database mappings.
+To secure a defensible product-market fit, **FitCal** must address the visual estimation errors ("spatial blindness") inherent to VLMs and transition from purely hallucinated LLM estimations to verified database mappings.
 
 ---
 
@@ -109,7 +109,7 @@ To secure a defensible product-market fit, **MacroVision** must address the visu
 
 ## 3. Comparative Matrix
 
-| Feature / Dimension | MacroVision | MyFitnessPal | Lose It! | Cronometer | Yazio | Foodvisor | Lifesum |
+| Feature / Dimension | FitCal | MyFitnessPal | Lose It! | Cronometer | Yazio | Foodvisor | Lifesum |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Model Architecture** | **Qwen2.5-VL (VLM)** | MobileViT / NetV3 (CNN) | CNN Classifier | CNN Classifier | CNN Classifier | Mask R-CNN | CNN Classifier |
 | **Deployment Mode** | Cloud API (OpenRouter) | **100% On-device Edge** | Cloud API | Cloud API | Cloud API | Cloud API | Cloud API |
@@ -123,12 +123,12 @@ To secure a defensible product-market fit, **MacroVision** must address the visu
 
 ---
 
-## 4. MacroVision Gap Analysis
+## 4. FitCal Gap Analysis
 
-Despite MacroVision's advanced VLM semantic intelligence (which outperforms competitors in classifying complex dishes, culinary styles, and hidden oils), the current MVP exhibits severe vulnerabilities when compared to commercial alternatives.
+Despite FitCal's advanced VLM semantic intelligence (which outperforms competitors in classifying complex dishes, culinary styles, and hidden oils), the current MVP exhibits severe vulnerabilities when compared to commercial alternatives.
 
 ### Gap 1: Database Disconnect (Parametric Hallucination)
-*   **The Problem:** MacroVision does not integrate with a nutrition database. The macro and calorie outputs are generated dynamically by the VLM (e.g., Qwen2.5-VL or Gemini 1.5 Flash).
+*   **The Problem:** FitCal does not integrate with a nutrition database. The macro and calorie outputs are generated dynamically by the VLM (e.g., Qwen2.5-VL or Gemini 1.5 Flash).
 *   **Why it's Dangerous:** VLMs suffer from arithmetic errors, inconsistencies (returning different calories for the same food item on different days), and lack regulatory compliance (e.g., USDA standard labeling). 
 *   **Competitor Benchmark:** Every competitor maps vision detections to physical database IDs (e.g., Cronometer mapping to NCCDB).
 
@@ -138,12 +138,12 @@ Despite MacroVision's advanced VLM semantic intelligence (which outperforms comp
 *   **Competitor Benchmark:** MyFitnessPal, Lose It!, and Foodvisor all provide a direct "Search-to-Swap" workflow to replace identified ingredients.
 
 ### Gap 3: Spatial Blindness and Portion Size Discrepancies
-*   **The Problem:** MacroVision relies on the VLM to make a zero-shot guess of weights in grams based on a 2D image.
+*   **The Problem:** FitCal relies on the VLM to make a zero-shot guess of weights in grams based on a 2D image.
 *   **Why it's Dangerous:** 2D images lack scale. Without a depth map or a reference cue, a small saucer of peanut butter can look identical to a large bowl, causing calorie estimation errors up to 100%.
 *   **Competitor Benchmark:** Foodvisor utilizes geometric projection; SnapCalorie uses LiDAR; Cronometer prompts for scale references.
 
 ### Gap 4: Latency and Network Dependency
-*   **The Problem:** MacroVision sends high-resolution base64 images to cloud VLM APIs.
+*   **The Problem:** FitCal sends high-resolution base64 images to cloud VLM APIs.
 *   **Why it's Dangerous:** Latency is tied to internet connectivity and model token output speeds, averaging 2–3 seconds. In low-network areas (like restaurants or grocery stores), the app is unusable.
 *   **Competitor Benchmark:** MyFitnessPal runs entirely offline on-device at <100ms.
 
@@ -151,7 +151,7 @@ Despite MacroVision's advanced VLM semantic intelligence (which outperforms comp
 
 ## 5. Actionable Roadmap & Recommendations
 
-To elevate MacroVision from an AI prototype to a market-ready consumer tracking product, we must prioritize the following implementations across our next development iterations.
+To elevate FitCal from an AI prototype to a market-ready consumer tracking product, we must prioritize the following implementations across our next development iterations.
 
 ### Phase 1: VLM Prompt Grounding & Local Database Mapping (High Priority)
 *   **Goal:** Eliminate LLM parameter hallucinations and ground all macros in USDA/FDC guidelines.
@@ -177,5 +177,5 @@ To elevate MacroVision from an AI prototype to a market-ready consumer tracking 
 ### Phase 4: Hybrid Edge-Cloud Processing (Long-Term R&D)
 *   **Goal:** Eliminate processing latency and provide real-time UI engagement.
 *   **Actionable Implementation:**
-    1.  **Edge Detection**: Embed a lightweight, local ONNX or CoreML model (like MobileNetV3) in the mobile viewfinder. Show real-time brackets around foods to notify the user that "MacroVision is detecting plates".
+    1.  **Edge Detection**: Embed a lightweight, local ONNX or CoreML model (like MobileNetV3) in the mobile viewfinder. Show real-time brackets around foods to notify the user that "FitCal is detecting plates".
     2.  **Cloud Analysis**: On shutter press, upload the image to the cloud VLM. This satisfies the user's need for instant feedback while preserving the VLM's superior semantic reasoning for the final breakdown.

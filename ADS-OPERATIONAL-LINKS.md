@@ -1,4 +1,4 @@
-# FITTER — ADS OPERATIONAL LINKS & LAUNCH CHECKLIST
+# FITCAL — ADS OPERATIONAL LINKS & LAUNCH CHECKLIST
 
 **Status:** Monetization is implemented, mandatory (no opt-out), and builds green.
 **State:** Code uses **Google OFFICIAL TEST units** (`ca-app-pub-3940256099942544/*`) and
@@ -11,8 +11,8 @@
 | # | Step | Where | Link |
 |---|------|-------|------|
 | 1 | Create AdMob account | Google account required; country+currency are **locked after signup**; account review ≤24h (rarely 2wk) | https://admob.google.com/ |
-| 2 | Add Fitter app → get **App ID** (`ca-app-pub-XXX~YYY`) | AdMob → Apps → Add App (link Play Store listing if published) | https://admob.google.com/home |
-| 3 | Create **5 ad units** (keep our 5 placeholders in `AdManager.kt`): banner, interstitial, rewarded, app-open (+ iOS set if iOS ships) | AdMob → Apps → [Fitter] → Ad Units → Add | https://apps.admob.google.com/ |
+| 2 | Add FitCal app → get **App ID** (`ca-app-pub-XXX~YYY`) | AdMob → Apps → Add App (link Play Store listing if published) | https://admob.google.com/home |
+| 3 | Create **5 ad units** (keep our 5 placeholders in `AdManager.kt`): banner, interstitial, rewarded, app-open (+ iOS set if iOS ships) | AdMob → Apps → [FitCal] → Ad Units → Add | https://apps.admob.google.com/ |
 | 4 | Verify ownership via **app-ads.txt** — REQUIRED for apps added after Jan 2025, else limited serving | Host `app-ads.txt` on your developer site | https://support.google.com/admob/answer/15948559?hl=en |
 
 > ⚠️ Never tap/click your own live ads — account ban + invalid-traffic flags. Test with
@@ -51,15 +51,15 @@
 | Meta Audience Network | https://www.facebook.com/business/help/1598141225905911 | requires approved FB Business + app |
 | Unity Ads | https://dashboard.unityads.unity3d.com/ | strong for interstitial/rewarded on mobile games & utilities |
 
-## 5. Code hook points (Fitter repo)
+## 5. Code hook points (FitCal repo)
 
 | Variable | File | Action |
 |----------|------|--------|
-| `ANDROID_TEST_APP_ID` + 4 test unit IDs | `MacroVision-UI/src/commonMain/kotlin/com/fitter/app/ads/AdManager.kt:16-27` | replace with YOUR 5 production IDs |
+| `ANDROID_TEST_APP_ID` + 4 test unit IDs | `FitCal-UI/src/commonMain/kotlin/com/fitcal/app/ads/AdManager.kt:16-27` | replace with YOUR 5 production IDs |
 | `isProductionMediationEnabled = false` | same file, `:30` | → `true` when MAX account ready (shows debugger; switches provider label to "AppLovin MAX Unified Bidding") |
-| App ID in AndroidManifest | `MacroVision-UI/src/androidMain/AndroidManifest.xml:32` | swap test → production App ID |
-| iOS App ID | `MacroVision-UI/src/iosMain/.../PlatformConfig.ios.kt` | set when iOS ships |
-| SDK deps | `MacroVision-UI/build.gradle.kts:69-70` | already present ✅ |
+| App ID in AndroidManifest | `FitCal-UI/src/androidMain/AndroidManifest.xml:32` | swap test → production App ID |
+| iOS App ID | `FitCal-UI/src/iosMain/.../PlatformConfig.ios.kt` | set when iOS ships |
+| SDK deps | `FitCal-UI/build.gradle.kts:69-70` | already present ✅ |
 
 ## 6. Go-live gate (ALL must be true)
 
@@ -70,7 +70,7 @@
 - [ ] AdMob + Meta + Unity accounts approved so MAX unified bidding fills
 - [ ] Privacy Policy mentions third-party ads (Play/iOS requirement)
 - [ ] Live QA on a real device: banner in tabs, interstitial at scan #4, rewarded +2, app-open on session 4+ (4h cooldown), mediation debugger shows bids
-- [ ] `export JAVA_HOME="C:\Program Files\Android\Android Studio1\jbr" && ./gradlew :MacroVision-UI:testDebugUnitTest` → all green (40 tests)
+- [ ] `export JAVA_HOME="C:\Program Files\Android\Android Studio1\jbr" && ./gradlew :FitCal-UI:testDebugUnitTest` → all green (40 tests)
 
 ## 7. Revenue expectations (2026 sane baselines, health-check later)
 

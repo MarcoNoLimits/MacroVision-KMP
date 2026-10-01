@@ -38,8 +38,8 @@
 - ScanQuotaManager: remoteQuotaManager hook, consumeScanServer(), syncQuotaFromServer(), premium bypass.
 
 ### Verified
-- ./gradlew :shared:compileDebugKotlinAndroid :MacroVision-UI:compileDebugKotlinAndroid --rerun-tasks → BUILD SUCCESSFUL, 33/33 executed.
-- ./gradlew :MacroVision-UI:testDebugUnitTest → green (UP-TO-DATE after Antigravity's own run).
+- ./gradlew :shared:compileDebugKotlinAndroid :FitCal-UI:compileDebugKotlinAndroid --rerun-tasks → BUILD SUCCESSFUL, 33/33 executed.
+- ./gradlew :FitCal-UI:testDebugUnitTest → green (UP-TO-DATE after Antigravity's own run).
 - worker tsc --noEmit → clean. No tracked real keys. .wrangler/ + .env ignored correctly.
 
 ### CRITICAL GAP (P0): client was NOT re-routed to the gateway
