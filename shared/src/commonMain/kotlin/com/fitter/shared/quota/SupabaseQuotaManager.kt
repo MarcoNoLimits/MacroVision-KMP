@@ -60,34 +60,27 @@ open class SupabaseQuotaManager(
     }
 
     /**
-     * Grants bonus scans via server authority RPC grant_bonus_scan(p_amount).
-     * Overload for backwards compatibility and subclassing.
+     * Grants bonus scans for a completed rewarded ad.
+     *
+     * SECURITY: this used to call the `grant_bonus_scan` PostgREST RPC directly
+     * from the client, which let any signed-in user grant themselves unlimited
+     * bonus scans — defeating both the daily quota and the Premium upgrade.
+     * Migration 0005 revokes that RPC from `authenticated`; the grant now goes
+     * through the authenticated gateway endpoint, which derives the user from the
+     * verified JWT (never from client input) and caps claims per day.
+     *
+     * Returns the new server-confirmed bonus count, or null on error.
      */
     open suspend fun grantBonusScan(amount: Int = 2): Int? {
-        return grantBonusScan(amount, null)
+        val gateway = gatewayClient ?: return null
+        return gateway.claimRewardedAdBonus(amount)
     }
 
     /**
-     * Grants bonus scans via server authority RPC grant_bonus_scan(p_amount, p_user_id).
-     * Returns the new server-confirmed bonus count, or null on error.
+     * Optional gateway used for server-authoritative bonus grants. Injected by the
+     * app so this manager stays free of networking concerns.
      */
-    open suspend fun grantBonusScan(amount: Int, userId: String?): Int? {
-        return try {
-            val uid = userId ?: try { client.auth.currentSessionOrNull()?.user?.id } catch (_: Exception) { null }
-            client.postgrest.rpc(
-                function = "grant_bonus_scan",
-                parameters = buildJsonObject {
-                    put("p_amount", amount)
-                    if (uid != null) {
-                        put("p_user_id", uid)
-                    }
-                }
-            ).decodeAs<Int>()
-        } catch (e: Exception) {
-            println("SupabaseQuotaManager.grantBonusScan failed: ${e.message}")
-            null  // Server not reachable; caller reconciles on next fetch
-        }
-    }
+    var gatewayClient: com.fitter.shared.api.GatewayNutritionClient? = null
 
     /**
      * Fetches current quota ledger snapshot from server.

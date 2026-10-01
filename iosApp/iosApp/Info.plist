@@ -47,11 +47,15 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>We need camera access to analyze your meals.</string>
-	<key>GADApplicationIdentifier</key>
-	<string>ca-app-pub-3940256099942544~1458002511</string>
-	<key>SKAdNetworkItems</key>
-	<array>
+		<string>We need camera access to analyze your meals.</string>
+		<key>NSPhotoLibraryUsageDescription</key>
+		<string>Fitter needs access to your photos so you can select a meal picture to analyze.</string>
+		<key>NSUserTrackingUsageDescription</key>
+		<string>This identifier helps us personalize ads and sponsors in the app. You can decline this in Settings and still use every Fitter feature.</string>
+		<key>GADApplicationIdentifier</key>
+		<string>$(GOOGLE_ADS_APP_ID)</string>
+		<key>SKAdNetworkItems</key>
+		<array>
 		<dict>
 			<key>SKAdNetworkIdentifier</key>
 			<string>cstr6suwn9.skadnetwork</string>
@@ -69,7 +73,5 @@
 			<string>ydx93a7ass.skadnetwork</string>
 		</dict>
 	</array>
-	<key>NSUserTrackingUsageDescription</key>
-	<string>This identifier helps us personalize ads and sponsors in the app.</string>
-</dict>
-</plist>
+	</dict>
+	</plist>

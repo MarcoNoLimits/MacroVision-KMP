@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12+ (API 31+) backup/data-extraction rules.
+
+  Meal photos, nutrition history and auth tokens are health-adjacent personal
+  data. Adb/auto-backup previously allowed them to be copied off-device into a
+  Google account or a device transfer, which is an unauthorised disclosure and
+  would defeat the GDPR deletion guarantee. Everything is excluded by default.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+        <exclude domain="file" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+        <exclude domain="file" />
+    </device-transfer>
+</data-extraction-rules>

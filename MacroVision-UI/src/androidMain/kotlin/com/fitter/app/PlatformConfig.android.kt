@@ -5,12 +5,18 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.media.ExifInterface
+import com.fitter.app.ads.AndroidAdManager
+import com.fitter.app.privacy.PrivacyConsent
+import com.google.android.ump.ConsentRequestParameters
+import com.google.android.ump.UserMessagingPlatform
+import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import kotlin.coroutines.resume
 
 actual val gatewayUrl: String get() = BuildConfig.GATEWAY_URL
 actual val supabaseUrl: String get() = BuildConfig.SUPABASE_URL
@@ -31,6 +37,116 @@ actual fun loadPreference(key: String, defaultValue: String): String {
     }
     val legacyPref = appContext.getSharedPreferences("macrovision_prefs", Context.MODE_PRIVATE)
     return legacyPref.getString(key, defaultValue) ?: defaultValue
+}
+
+/**
+ * Binds SharedPreferences into the shared consent store.
+ * Uses the same "fitter_prefs" file so consent persists across app restarts
+ * and survives a process death mid-session.
+ */
+actual fun initPrivacyConsentStore() {
+    PrivacyConsent.bindStorage(object : PrivacyConsent.ConsentStorage {
+        private fun prefs() =
+            appContext.getSharedPreferences("fitter_prefs", Context.MODE_PRIVATE)
+
+        override fun getBoolean(key: String, default: Boolean): Boolean =
+            prefs().getBoolean(key, default)
+
+        override fun putBoolean(key: String, value: Boolean) {
+            prefs().edit().putBoolean(key, value).apply()
+        }
+
+        override fun getLong(key: String, default: Long): Long =
+            prefs().getLong(key, default)
+
+        override fun putLong(key: String, value: Long) {
+            prefs().edit().putLong(key, value).apply()
+        }
+    })
+}
+
+/**
+ * Builds the consent storage. Uses applicationContext when available so it works
+ * from any thread with no Activity; falls back to an in-memory store before init
+ * so early composition cannot crash the consent gate.
+ */
+actual fun createConsentStorage(): PrivacyConsent.ConsentStorage {
+    val fallback = mutableMapOf<String, Boolean>()
+
+    return object : PrivacyConsent.ConsentStorage {
+        private fun ready(): Boolean = ::appContext.isInitialized
+
+        private fun prefs() = appContext.getSharedPreferences("fitter_prefs", Context.MODE_PRIVATE)
+
+        override fun getBoolean(key: String, default: Boolean): Boolean =
+            if (ready()) prefs().getBoolean(key, default) else fallback[key] ?: default
+
+        override fun putBoolean(key: String, value: Boolean) {
+            if (ready()) prefs().edit().putBoolean(key, value).apply() else fallback[key] = value
+        }
+
+        override fun getLong(key: String, default: Long): Long =
+            if (ready()) prefs().getLong(key, default) else default
+
+        override fun putLong(key: String, value: Long) {
+            if (ready()) prefs().edit().putLong(key, value).apply()
+        }
+    }
+}
+
+/**
+ * Android consent: Google UMP (User Messaging Platform) via the AppLovin CMP
+ * bridge, falling back to a non-personalized default when unsupported.
+ *
+ * IMPORTANT: the caller MUST await this before MobileAds.initialize / ad loads.
+ * Initializing first and prompting later is the defect this function exists to prevent.
+ */
+actual suspend fun requestPlatformAdConsent(): Boolean = suspendCancellableCoroutine { cont ->
+    try {
+        val activity = AndroidAdManager.currentActivityRef?.get()
+        if (activity == null) {
+            android.util.Log.w("Fitter_Privacy", "No activity; treating consent as denied")
+            cont.resume(false)
+            return@suspendCancellableCoroutine
+        }
+
+        val consentInformation = UserMessagingPlatform.getConsentInformation(activity)
+        val params = ConsentRequestParameters.Builder()
+            .setTagForUnderAgeOfConsent(false)
+            .build()
+
+        consentInformation.requestConsentInfoUpdate(
+            activity,
+            params,
+            {
+                UserMessagingPlatform.loadAndShowConsentFormIfRequired(activity) { formError ->
+                    if (formError != null) {
+                        android.util.Log.w("Fitter_Privacy", "UMP consent form error: ${formError.message}")
+                    }
+                    val canRequest = consentInformation.canRequestAds()
+                    android.util.Log.i("Fitter_Privacy", "UMP consent resolved. canRequestAds=$canRequest")
+                    try {
+                        com.applovin.sdk.AppLovinPrivacySettings.setHasUserConsent(canRequest, activity)
+                    } catch (t: Throwable) {
+                        android.util.Log.w("Fitter_Privacy", "AppLovin consent sync failed: ${t.message}")
+                    }
+                    cont.resume(canRequest)
+                }
+            },
+            { requestError ->
+                android.util.Log.w("Fitter_Privacy", "UMP consent request error: ${requestError.message}")
+                val canRequest = consentInformation.canRequestAds()
+                try {
+                    com.applovin.sdk.AppLovinPrivacySettings.setHasUserConsent(canRequest, activity)
+                } catch (_: Throwable) {}
+                cont.resume(canRequest)
+            }
+        )
+    } catch (t: Throwable) {
+        // Fail closed: an unexpected CMP failure must never silently become consent.
+        android.util.Log.w("Fitter_Privacy", "CMP exception: ${t.message}")
+        cont.resume(false)
+    }
 }
 
 actual fun getCurrentTimeString(): String {

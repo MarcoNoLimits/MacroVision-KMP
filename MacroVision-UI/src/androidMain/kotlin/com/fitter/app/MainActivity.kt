@@ -9,7 +9,10 @@ import com.applovin.sdk.AppLovinSdk
 import com.applovin.sdk.AppLovinSdkInitializationConfiguration
 import com.fitter.app.ads.AdConfig
 import com.fitter.app.ads.AndroidAdManager
+import com.fitter.app.privacy.PrivacyConsent
 import com.google.android.gms.ads.MobileAds
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import java.lang.ref.WeakReference
 
 class MainActivity : ComponentActivity() {
@@ -17,38 +20,52 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         appContext = applicationContext
+        initPrivacyConsentStore()
         AndroidAdManager.currentActivityRef = WeakReference(this)
-
-        if (AdConfig.isProductionMediationEnabled && AdConfig.maxSdkKey.isNotBlank()) {
-            val initConfig = AppLovinSdkInitializationConfiguration.builder(AdConfig.maxSdkKey, this)
-                .setMediationProvider(AppLovinMediationProvider.MAX)
-                .build()
-
-            AppLovinSdk.getInstance(this).initialize(initConfig) {
-                getPlatformAdManager().preloadAds()
-                // Regional Privacy / CMP Consent Flow for GDPR, UK & CCPA compliance
-                try {
-                    val cmpService = AppLovinSdk.getInstance(this@MainActivity).cmpService
-                    if (cmpService.hasSupportedCmp()) {
-                        cmpService.showCmpForExistingUser(this@MainActivity) { error ->
-                            if (error != null) {
-                                android.util.Log.d("Fitter_Privacy", "CMP consent notice: ${error.message}")
-                            }
-                        }
-                    }
-                } catch (t: Throwable) {
-                    android.util.Log.d("Fitter_Privacy", "CMP check: ${t.message}")
-                }
-            }
-        } else {
-            // Initialize Google Mobile Ads SDK on a background thread
-            MobileAds.initialize(this) {
-                getPlatformAdManager().preloadAds()
-            }
-        }
 
         setContent {
             App()
+        }
+
+        // ── Ad initialization is DEFERRED until consent is resolved. ──
+        // Previously MobileAds/AppLovin initialized and preloadAds() ran before (or
+        // entirely without) a CMP result, which violates GDPR/ePrivacy Art. 5(3),
+        // Google Play's EU consent policy, and ATT. Order matters legally.
+        lifecycleScope.launch {
+            // 1. Collect the OS/store consent signal FIRST.
+            val platformGranted = requestPlatformAdConsent()
+
+            // 2. AND it with the user's explicit in-app choice. Denying either wins.
+            val personalized = platformGranted && PrivacyConsent.isAdsPersonalizationEnabled()
+
+            if (!PrivacyConsent.canRequestAds()) {
+                // No privacy acceptance at all: never initialize ad SDKs.
+                android.util.Log.i("Fitter_Privacy", "Privacy not accepted — skipping ad init")
+                return@launch
+            }
+
+            // 3. Only now initialize the mediation stack.
+            if (AdConfig.isProductionMediationEnabled && AdConfig.maxSdkKey.isNotBlank()) {
+                val initConfig = AppLovinSdkInitializationConfiguration.builder(AdConfig.maxSdkKey, this@MainActivity)
+                    .setMediationProvider(AppLovinMediationProvider.MAX)
+                    .build()
+
+                AppLovinSdk.getInstance(this@MainActivity).initialize(initConfig) {
+                    if (personalized) {
+                        getPlatformAdManager().preloadAds()
+                    } else {
+                        android.util.Log.i("Fitter_Privacy", "Ads limited to non-personalized")
+                    }
+                }
+            } else {
+                MobileAds.initialize(this@MainActivity) {
+                    if (personalized) {
+                        getPlatformAdManager().preloadAds()
+                    } else {
+                        android.util.Log.i("Fitter_Privacy", "Ads limited to non-personalized")
+                    }
+                }
+            }
         }
     }
 

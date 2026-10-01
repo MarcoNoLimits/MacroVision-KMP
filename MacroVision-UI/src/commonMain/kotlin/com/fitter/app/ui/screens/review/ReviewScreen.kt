@@ -124,6 +124,33 @@ fun ResultScreen(
             .padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // ── Estimate disclaimer ────────────────────────────────────────────────
+        // Must sit immediately above the numbers, not buried at the bottom of a
+        // screen the user scrolls past. Presenting estimated calories with no
+        // adjacent caveat is the core medical-liability exposure.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(DangerSoft, RoundedCornerShape(RadiusXS))
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Icon(
+                imageVector = Icons.Default.Info,
+                contentDescription = null,
+                tint = DangerTextStrong,
+                modifier = Modifier.size(16.dp),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "AI-generated estimates. Portion sizes are approximate and may be " +
+                    "significantly off — not medical advice. Verify with a kitchen scale for " +
+                    "accurate tracking.",
+                style = MaterialTheme.typography.bodySmall,
+                color = DangerTextStrong,
+            )
+        }
+
         // Top Header
         Row(
             modifier = Modifier.fillMaxWidth(),

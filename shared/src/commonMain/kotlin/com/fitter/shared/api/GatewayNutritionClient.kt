@@ -17,6 +17,8 @@ import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 import io.ktor.client.statement.HttpResponse
 import kotlinx.coroutines.delay
@@ -56,6 +58,19 @@ private data class RecalculateRequest(
 private data class RecalcItem(
     val name: String,
     val grams: Int
+)
+
+/** Response shape of POST /v1/reward/ad-earned. */
+@Serializable
+data class RewardResponse(
+    val bonus: Int,
+    val granted: Int = 0
+)
+
+/** Response shape of POST /v1/account/delete. */
+@Serializable
+data class DeleteAccountResponse(
+    val deleted: Boolean = false
 )
 
 /**
@@ -162,6 +177,95 @@ class GatewayNutritionClient(
         }
 
         return response.body<NutritionResponse>()
+    }
+
+    /**
+     * Deletes the caller's account and all associated data via the authenticated
+     * gateway, which derives the user from the verified JWT.
+     *
+     * Required by Google Play (in-app account deletion) and GDPR Art. 17. Returns
+     * true only when the server confirms completion — never optimistically, because
+     * a false success would tell the user their data is gone when it is not.
+     */
+    suspend fun deleteAccount(): Boolean {
+        return try {
+            var jwt = jwtProvider()
+            if (jwt == null && reAuthenticator != null) {
+                try {
+                    reAuthenticator.invoke()
+                    jwt = jwtProvider()
+                } catch (_: Throwable) {
+                    // fall through
+                }
+            }
+            if (jwt == null) return false
+
+            val response = httpClient.post("$gatewayUrl/v1/account/delete") {
+                contentType(ContentType.Application.Json)
+                header("Authorization", "Bearer $jwt")
+                header("x-device-id", deviceIdProvider())
+                setBody(buildJsonObject { put("confirm", true) })
+            }
+
+            if (!response.status.isSuccess()) return false
+            response.body<DeleteAccountResponse>().deleted
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    // ── Rewarded-ad bonus grant (server-authoritative) ──────────────────────────
+
+    /**
+     * Reports a completed rewarded ad and returns the server-confirmed new bonus
+     * total, or null when the grant was refused (daily cap, auth failure, network).
+     *
+     * Replaces the old client-side `grant_bonus_scan` PostgREST call, which let any
+     * signed-in user mint unlimited bonus scans (migration 0005 revoked that RPC).
+     * The Worker derives the user from the verified JWT, never from this payload.
+     */
+    suspend fun claimRewardedAdBonus(amount: Int): Int? {
+        return try {
+            var jwt = jwtProvider()
+            if (jwt == null && reAuthenticator != null) {
+                try {
+                    reAuthenticator.invoke()
+                    jwt = jwtProvider()
+                } catch (_: Throwable) {
+                    // fall through
+                }
+            }
+            if (jwt == null) return null
+
+            val payload = buildJsonObject { put("amount", amount.coerceIn(0, 3)) }
+
+            suspend fun post(token: String): HttpResponse =
+                httpClient.post("$gatewayUrl/v1/reward/ad-earned") {
+                    contentType(ContentType.Application.Json)
+                    header("Authorization", "Bearer $token")
+                    header("x-device-id", deviceIdProvider())
+                    setBody(payload)
+                }
+
+            var response = post(jwt)
+            if (response.status == HttpStatusCode.Unauthorized && reAuthenticator != null) {
+                try {
+                    reAuthenticator.invoke()
+                    jwtProvider()?.let { fresh -> response = post(fresh) }
+                } catch (_: Throwable) {
+                    // fall through to status check
+                }
+            }
+
+            // 429 = daily reward cap reached; treat as "no bonus granted", not an error.
+            if (response.status == HttpStatusCode.TooManyRequests) return null
+            if (!response.status.isSuccess()) return null
+
+            val body = response.body<RewardResponse>()
+            body.bonus
+        } catch (_: Exception) {
+            null
+        }
     }
 
     // ── Typed result variant (preferred for UI quota gating) ──────────────────

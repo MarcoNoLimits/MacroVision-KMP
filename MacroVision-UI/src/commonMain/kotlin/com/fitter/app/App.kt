@@ -10,6 +10,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.fitter.app.ads.AdManager
+import com.fitter.app.privacy.PrivacyConsent
+import com.fitter.app.ui.screens.privacy.PrivacyConsentScreen
 import com.fitter.app.ads.AppOpenAdManager
 import com.fitter.app.ads.ScanQuotaManager
 import com.fitter.app.data.PreferenceKeyValueStorage
@@ -20,6 +22,13 @@ import com.fitter.app.ui.navigation.DashboardDestination
 import com.fitter.app.ui.navigation.MonetizationDestination
 import com.fitter.app.ui.navigation.ResultDestination
 import com.fitter.app.ui.navigation.SettingsDestination
+import com.fitter.app.ui.navigation.FoodLibraryDestination
+import com.fitter.app.ui.navigation.PrivacyPolicyDestination
+import com.fitter.app.ui.navigation.TermsDestination
+import com.fitter.app.ui.screens.privacy.PrivacyPolicyScreen
+import com.fitter.app.ui.screens.privacy.AgeGateScreen
+import com.fitter.app.ui.screens.library.FoodLibraryScreen
+import com.fitter.app.privacy.AgeGate
 import com.fitter.app.ui.components.newMealId
 import com.fitter.app.ui.screens.auth.AuthScreen
 import com.fitter.app.ui.screens.camera.CameraScreen
@@ -59,7 +68,17 @@ fun App() {
         SupabaseAuthService(supabaseUrl, supabaseAnonKey)
     }
     val quotaManager = remember {
-        com.fitter.shared.quota.SupabaseQuotaManager(supabaseClient)
+        com.fitter.shared.quota.SupabaseQuotaManager(supabaseClient).apply {
+            // Rewarded-ad bonus grants must be server-authoritative: the client used
+            // to call grant_bonus_scan directly, which let any user mint unlimited
+            // scans. The gateway derives the user from the verified JWT instead.
+            gatewayClient = GatewayNutritionClient(
+                gatewayUrl = gatewayUrl,
+                jwtProvider = { authService.currentSession()?.accessToken },
+                reAuthenticator = { authService.ensureSignedIn() },
+                dailyAllowanceProvider = { ScanQuotaManager.getDailyFreeLimit() },
+            )
+        }
     }
     val syncEngine = remember {
         com.fitter.shared.sync.SyncEngine(storage, supabaseClient)
@@ -111,6 +130,55 @@ fun App() {
     // Keep track of the last captured image bytes to render on ResultScreen
     var lastCapturedImageBytes by remember { mutableStateOf<ByteArray?>(null) }
 
+    // ── Privacy consent gate ──────────────────────────────────────────────────
+    // Nothing below this line may run before consent: no Supabase session, no ad
+    // preload, no camera, no gateway call. initPrivacyConsentStore() is invoked by
+    // the platform entry point (MainActivity / iOS main) before setContent.
+    var privacyAccepted by remember { mutableStateOf(PrivacyConsent.isPrivacyAccepted()) }
+    var showLegalDocument by remember { mutableStateOf(false) }
+    var ageAcknowledged by remember { mutableStateOf(AgeGate.hasAcknowledged()) }
+
+    // Set when the user confirms the eating-disorder caution at the age gate.
+    // Suppresses calorie-goal emphasis for younger adult profiles.
+    var userProfileCautionAccepted by remember { mutableStateOf(false) }
+
+    // Legal docs must be readable BEFORE consent — a user cannot accept terms
+    // they are unable to read. This early return keeps it a full-screen overlay
+    // rather than composing both screens at once.
+    if (showLegalDocument) {
+        FitterTheme {
+            PrivacyPolicyScreen(onClose = { showLegalDocument = false })
+        }
+        return
+    }
+
+    if (!privacyAccepted) {
+        FitterTheme {
+            PrivacyConsentScreen(
+                onDecisionComplete = { privacyAccepted = true },
+                onOpenPrivacyPolicy = { showLegalDocument = true },
+                onOpenTerms = { showLegalDocument = true },
+            )
+        }
+        return
+    }
+
+    // ── Age gate (Play Families / AdMob adult-content policy) ───────────────
+    // Runs AFTER consent but BEFORE any app surface. Fitter is declared 18+ only;
+    // this makes the declaration enforceable rather than a store-listing promise.
+    if (!ageAcknowledged) {
+        FitterTheme {
+            AgeGateScreen(
+                onComplete = {
+                    AgeGate.setAcknowledged(true)
+                    ageAcknowledged = true
+                    userProfileCautionAccepted = it
+                },
+            )
+        }
+        return
+    }
+
     FitterTheme {
         Box(
             modifier = Modifier
@@ -118,12 +186,14 @@ fun App() {
                 .background(BgColor)
         ) {
             val navController = rememberNavController()
-                        val adManager = remember { getPlatformAdManager() }
+            val adManager = remember { getPlatformAdManager() }
 
-                        // Ads are MANDATORY on the free tier: no user-facing opt-out switch.
-                        // Premium users are gated ad-free by SubscriptionManager (both here and
-                        // inside ScanQuotaManager). Keeping a single named boolean documents intent.
-                        val showAdsForUser = !com.fitter.shared.subscription.SubscriptionManager.isPremiumUser()
+            // Ad visibility = premium status AND an accepted privacy decision.
+            // Personalized ad *requests* are additionally gated on the CMP/ATT
+            // signal in MainActivity — showing a non-personalized ad is always
+            // allowed once the privacy notice has been accepted.
+            val showAdsForUser = !com.fitter.shared.subscription.SubscriptionManager.isPremiumUser() &&
+                PrivacyConsent.canRequestAds()
 
             // Phase 10 — auth readiness gate:
             // null = boot in-flight | true = auth confirmed | false = offline (all retries failed)
@@ -280,6 +350,9 @@ fun App() {
                         onSettingsClicked = {
                             navController.navigate(SettingsDestination)
                         },
+                        onOpenFoodLibrary = {
+                            navController.navigate(FoodLibraryDestination)
+                        },
                         onMonetizationClicked = {
                             navController.navigate(MonetizationDestination)
                         },
@@ -406,7 +479,48 @@ fun App() {
                         },
                         onBack = {
                             navController.popBackStack()
-                        }
+                        },
+                        onDeleteAllData = {
+                            // Play requires a real account-deletion path, and GDPR
+                            // Art. 17 requires the request actually be honoured.
+                            coroutineScope.launch {
+                                val confirmed = apiClient.deleteAccount()
+                                if (confirmed) {
+                                    PrivacyConsent.clearAll()
+                                    AgeGate.reset()
+                                    privacyAccepted = false
+                                    ageAcknowledged = false
+                                    authService.signOut()
+                                    userEmail = null
+                                }
+                            }
+                        },
+                        onOpenPrivacyPolicy = {
+                            navController.navigate(PrivacyPolicyDestination)
+                        },
+                        onOpenTerms = {
+                            navController.navigate(TermsDestination)
+                        },
+                    )
+                }
+
+                composable<PrivacyPolicyDestination> {
+                    PrivacyPolicyScreen(
+                        onClose = { navController.popBackStack() },
+                        showTermsFirst = false,
+                    )
+                }
+
+                composable<TermsDestination> {
+                    PrivacyPolicyScreen(
+                        onClose = { navController.popBackStack() },
+                        showTermsFirst = true,
+                    )
+                }
+
+                composable<FoodLibraryDestination> {
+                    FoodLibraryScreen(
+                        onBack = { navController.popBackStack() },
                     )
                 }
 

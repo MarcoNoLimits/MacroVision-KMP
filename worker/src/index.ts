@@ -1,4 +1,5 @@
 import { verifySupabaseJwt, extractBearerToken, type AuthClaims } from "./auth.ts";
+import { PRIVACY_HTML } from "./privacy.ts";
 
 // ─── Environment ─────────────────────────────────────────────────────────────
 
@@ -13,6 +14,10 @@ export interface Env {
   SUPABASE_SERVICE_ROLE_KEY?: string;
   // RevenueCat webhook verification
   REVENUECAT_WEBHOOK_SECRET?: string;
+  // Comma-separated list of browser origins permitted to call the gateway.
+  // Empty/unset (the default) means NO browser origin is reflected; native clients
+  // are unaffected because they send no Origin header.
+  ALLOWED_ORIGINS?: string;
   // Operational flags
   FITTER_KILL_SWITCH?: string;
   KILL_SWITCH?: string;
@@ -53,7 +58,20 @@ export interface NutritionResponse {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const SYSTEM_PROMPT = `You are a professional nutritionist. Analyze the food in this image.
+const SYSTEM_PROMPT = `You are a food-recognition assistant that estimates nutrition from a photo.
+You are NOT a medical professional and must never give medical advice.
+
+MANDATORY SAFETY RULES:
+1. NEVER diagnose, treat, or advise on any medical condition (including diabetes,
+   eating disorders, pregnancy, allergies, or medication interactions).
+2. NEVER recommend a specific diet for treating a health condition. Only describe
+   what is visible in the image.
+3. NEVER output extreme calorie or macro targets. Do not recommend consuming less
+   than 1200 kcal/day.
+4. If the image appears to show no food, return an empty items array and set
+   estimation_notes to explain that no food could be identified.
+5. Portion sizes from a single photo are approximate. Say so in estimation_notes.
+
 Return ONLY a valid JSON object — no prose, no markdown fences, no explanation.
 Use this exact structure:
 {
@@ -78,11 +96,35 @@ Use this exact structure:
   "estimation_notes": "string"
 }`;
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
+const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, x-device-id, x-device-attestation",
 };
+
+/**
+ * Builds per-request CORS headers.
+ *
+ * A wildcard origin is unsafe on a bearer-token API: any web page can call this
+ * gateway with a stolen token and read the response. Native Android/iOS clients do
+ * not send an Origin header, so they resolve to the null (deny) case and still work.
+ *
+ * Allow additional browser origins explicitly via ALLOWED_ORIGINS (comma-separated).
+ */
+function corsHeaders(origin: string | null, env: Env): Record<string, string> {
+  const headers: Record<string, string> = { ...CORS_HEADERS, Vary: "Origin" };
+
+  const allowed = (env.ALLOWED_ORIGINS || "")
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean);
+
+  if (allowed.length === 0) return headers; // no Origin reflection → browser callers blocked
+
+  if (origin && allowed.includes(origin)) {
+    headers["Access-Control-Allow-Origin"] = origin;
+  }
+  return headers;
+}
 
 // Max daily_allowance the client may claim (prevents a modified client sending 999)
 const MAX_DAILY_ALLOWANCE = 5;
@@ -190,7 +232,9 @@ async function authenticate(request: Request, env: Env): Promise<AuthClaims | Re
     return claims;
   } catch (e: any) {
     console.warn("JWT verification failed:", e.message);
-    return err401(`Invalid token: ${e.message}`);
+    // Client gets a stable code for re-auth; the reason goes to logs only.
+    // Leaking verification internals helps an attacker fingerprint the failure.
+    return err401("Session expired or invalid. Please sign in again.");
   }
 }
 
@@ -327,6 +371,56 @@ async function consumeScanServerSide(
   if (typeof result === "boolean") return result;
   if (Array.isArray(result) && result.length > 0) return Boolean(result[0]);
   return Boolean(result);
+}
+
+// ─── Rewarded-ad bonus grant (server-authoritative) ──────────────────────────
+
+/**
+ * Grants reward-ad bonus scans using the service_role key.
+ *
+ * The client must NOT be able to call grant_bonus_scan directly — that was a
+ * quota/revenue bypass (migration 0005 revokes it from `authenticated`). The
+ * rewarded-ad flow therefore asks this endpoint instead, where the JWT proves
+ * who the user is and the rate limiter bounds abuse.
+ *
+ * REWARD_BONUS_CAP is the maximum cumulative rewarded-ad bonus per user per day.
+ * Without a cap, a user could script reward claims for unbounded VLM spend.
+ */
+const REWARD_BONUS_CAP = 10;
+
+async function grantBonusScanServerSide(
+  env: Env,
+  userId: string,
+  amount: number
+): Promise<number> {
+  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not configured on gateway");
+  }
+
+  // Clamp hard: a caller must never be able to request an arbitrary bonus.
+  const safeAmount = Math.min(Math.max(Math.floor(amount) || 0, 0), 3);
+
+  const url = `${env.SUPABASE_URL.replace(/\/$/, "")}/rest/v1/rpc/grant_bonus_scan`;
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Accept-Profile": "fitter",
+      "Content-Profile": "fitter",
+      apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+    },
+    body: JSON.stringify({ p_amount: safeAmount, p_user_id: userId }),
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`grant_bonus_scan RPC failed (${resp.status}): ${errText}`);
+  }
+
+  const result = await resp.json();
+  if (Array.isArray(result) && result.length > 0) return Number(result[0]);
+  return Number(result) || 0;
 }
 
 // ─── RevenueCat webhook signature verification ────────────────────────────────
@@ -611,14 +705,17 @@ function devMockResponse(): NutritionResponse {
 
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
-export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    const url = new URL(request.url);
+/**
+ * Route implementation. The exported `fetch` wrapper below applies per-request
+ * CORS to every response uniformly, so no individual handler needs to remember.
+ */
+async function routeRequest(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
 
-    // CORS preflight
-    if (request.method === "OPTIONS") {
-      return new Response(null, { headers: CORS_HEADERS });
-    }
+  // CORS preflight
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: corsHeaders(request.headers.get("origin"), env) });
+  }
 
     // Kill switch (unauthenticated; checked early before any endpoint)
     if (env.KILL_SWITCH === "true" || env.FITTER_KILL_SWITCH === "true") {
@@ -628,9 +725,21 @@ export default {
       );
     }
 
-    // Health check (unauthenticated)
+    // Health check (unauthenticated, non-enumerating).
+    // Reports liveness only — never env name, key presence, or provider state.
     if (url.pathname === "/health" || url.pathname === "/") {
-      return jsonResponse({ status: "healthy", service: "fitter-gateway", env: env.FITTER_ENV || "production" }, 200);
+      return jsonResponse({ status: "healthy" }, 200);
+    }
+
+    // Public Privacy Policy endpoint (for Google Play Console and AdMob verification)
+    if (request.method === "GET" && (url.pathname === "/privacy" || url.pathname === "/privacy.html")) {
+      return new Response(PRIVACY_HTML, {
+        status: 200,
+        headers: {
+          "Content-Type": "text/html; charset=utf-8",
+          ...corsHeaders(request.headers.get("origin"), env),
+        },
+      });
     }
 
     // ── RevenueCat Webhook (Phase 7) ──────────────────────────────────────────
@@ -639,15 +748,24 @@ export default {
       try {
         const body = await request.text();
 
-        // Verify RevenueCat signature
-        if (env.REVENUECAT_WEBHOOK_SECRET) {
+        // Fail closed in production: an unverified webhook lets anyone mint premium
+        // entitlements for any app_user_id. Dev is the ONLY environment that may skip.
+        if (!env.REVENUECAT_WEBHOOK_SECRET) {
+          if ((env.FITTER_ENV || "production") === "dev") {
+            console.warn("REVENUECAT_WEBHOOK_SECRET not set — signature check SKIPPED (dev only)");
+          } else {
+            console.error("REVENUECAT_WEBHOOK_SECRET not set in a non-dev environment — rejecting webhook");
+            return jsonResponse(
+              { error: "Service temporarily unavailable", message: "Webhook verification is not configured." },
+              503
+            );
+          }
+        } else {
           const valid = await verifyRevenueCatSignature(request, body, env.REVENUECAT_WEBHOOK_SECRET);
           if (!valid) {
             console.warn("RevenueCat webhook: invalid signature");
             return jsonResponse({ error: "Unauthorized", message: "Invalid webhook signature" }, 401);
           }
-        } else {
-          console.warn("REVENUECAT_WEBHOOK_SECRET not set — skipping signature check (dev only)");
         }
 
         const event = (JSON.parse(body) as any).event || {};
@@ -667,7 +785,8 @@ export default {
 
         return jsonResponse({ status: "received", processed: Boolean(appUserId) }, 200);
       } catch (e: any) {
-        return jsonResponse({ error: e.message }, 400);
+        console.error("RevenueCat webhook parse error:", e.message);
+        return jsonResponse({ error: "Bad Request", message: "Malformed webhook payload" }, 400);
       }
     }
 
@@ -761,9 +880,12 @@ export default {
           userPrompt += `\nNOTE: The user's plate size is exactly ${plateSizeInches} inches. Calibrate portion sizes accordingly.`;
         }
 
-        // Semantic KV cache
+        // Semantic KV cache — USER-SCOPED.
+        // The image hash alone is shared across every user: two people photographing
+        // the same dish would otherwise share one cache entry, disclosing one user's
+        // analysis to another. Namespacing by user_id removes the cross-tenant read.
         const semanticHash = await sha256(`analyze:${userPrompt}:${imageBase64.substring(0, 10000)}:${imageBase64.length}`);
-        const cacheKey = `vlm:${semanticHash}`;
+        const cacheKey = `vlm:${userId}:${semanticHash}`;
 
         if (env.VLM_CACHE) {
           const cachedResult = await env.VLM_CACHE.get(cacheKey);
@@ -807,6 +929,107 @@ export default {
       }
 
 
+      // ── POST /v1/account/delete (GDPR Art. 17 / Play account-deletion) ──────
+      // Google Play REQUIRES an in-app account deletion path. The client sends the
+      // authenticated user's Supabase access token in the body; it is re-verified
+      // against the JWT before anything is deleted, so a body value alone can never
+      // target another account.
+      if (request.method === "POST" && url.pathname === "/v1/account/delete") {
+        if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
+          return jsonResponse(
+            { error: "Service temporarily unavailable", message: "Deletion is not configured." },
+            503
+          );
+        }
+
+        const base = env.SUPABASE_URL.replace(/\/$/, "");
+        const authHeaders = {
+          "Content-Type": "application/json",
+          apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+          Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+          "Accept-Profile": "fitter",
+          "Content-Profile": "fitter",
+        };
+
+        try {
+          // 1. Purge cached data tied to this user (KV holds entitlement + analyses).
+          if (env.VLM_CACHE) {
+            await env.VLM_CACHE.delete(`entitlement:${userId}:fitter_premium`);
+            await env.VLM_CACHE.delete(`${userId}:reward`);
+          }
+
+          // 2. Remove user-owned rows. RLS does not apply to service_role, so the
+          //    WHERE clause is the only thing scoping this to the caller.
+          for (const table of [
+            "meals",
+            "water_intake",
+            "scan_quota",
+            "analytics_events",
+            "user_meta",
+            "profiles",
+          ]) {
+            const res = await fetch(`${base}/rest/v1/${table}?user_id=eq.${userId}`, {
+              method: "DELETE",
+              headers: authHeaders,
+            });
+            if (!res.ok && res.status !== 404) {
+              const detail = await res.text();
+              // 409/23503 = FK dependency ordering issue: report, don't claim success.
+              throw new Error(`${table} deletion failed (${res.status}): ${detail}`);
+            }
+          }
+
+          // 3. Delete the Supabase Auth user. This invalidates the session everywhere.
+          const authRes = await fetch(`${base}/auth/v1/admin/users/${userId}`, {
+            method: "DELETE",
+            headers: authHeaders,
+          });
+          if (!authRes.ok && authRes.status !== 404) {
+            const detail = await authRes.text();
+            throw new Error(`auth user deletion failed (${authRes.status}): ${detail}`);
+          }
+
+          console.log(`[AccountDelete] user=${userId} completed`);
+          return jsonResponse({ deleted: true }, 200);
+        } catch (e: any) {
+          console.error("[AccountDelete] failed:", e.message);
+          return jsonResponse(
+            { error: "Internal Server Error", message: "Deletion could not be completed." },
+            500
+          );
+        }
+      }
+
+      // ── POST /v1/reward/ad-earned ────────────────────────────────────────────
+      // Replaces the client-side grant_bonus_scan RPC (revoked in migration 0005).
+      // The user is taken from the verified JWT — never from the request body —
+      // and the per-day cumulative bonus is capped.
+      if (request.method === "POST" && url.pathname === "/v1/reward/ad-earned") {
+        const body: any = await request.json().catch(() => ({}));
+        const requested = Number(body?.amount ?? 1);
+
+        // Rate-limit reward claims independently of ordinary scans.
+        const rewardWindow = `${userId}:reward`;
+        const claims = Number((await env.VLM_CACHE?.get(rewardWindow)) || 0);
+
+        if (claims >= REWARD_BONUS_CAP) {
+          return jsonResponse(
+            {
+              error: "Reward limit reached",
+              message: `Maximum of ${REWARD_BONUS_CAP} rewarded scans per day reached.`,
+            },
+            429
+          );
+        }
+
+        const bonus = await grantBonusScanServerSide(env, userId, requested);
+        await env.VLM_CACHE?.put(rewardWindow, String(claims + 1), {
+          expirationTtl: 86400,
+        });
+
+        return jsonResponse({ bonus, granted: requested }, 200);
+      }
+
       // ── POST /v1/recalculate ──────────────────────────────────────────────────
       if (request.method === "POST" && url.pathname === "/v1/recalculate") {
         const body: any = await request.json();
@@ -821,8 +1044,10 @@ export default {
           .join("\n");
         const prompt = `Analyze these food items and estimate their nutritional contents based on the given weights.\nItems:\n${itemsPrompt}`;
 
+        // USER-SCOPED (see /v1/analyze-meal): identical item lists are common across
+        // users, so an unscoped key would serve one user's recalculation to another.
         const semanticHash = await sha256(`recalc:${prompt}`);
-        const cacheKey = `vlm:${semanticHash}`;
+        const cacheKey = `vlm:${userId}:${semanticHash}`;
 
         if (env.VLM_CACHE) {
           const cached = await env.VLM_CACHE.get(cacheKey);
@@ -852,11 +1077,33 @@ export default {
       return jsonResponse({ error: "Not Found" }, 404);
     } catch (error: any) {
       console.error("Gateway request handling error:", error);
+      // Do NOT echo raw error messages to clients — they can leak provider
+      // responses, key prefixes, or upstream internals. Log full detail instead.
       return jsonResponse(
-        { error: "Internal Server Error", message: error.message || "An unexpected error occurred" },
+        { error: "Internal Server Error", message: "An unexpected error occurred." },
         500
       );
     }
+}
+
+/**
+ * Exported entrypoint. Applies the per-request CORS policy to whatever
+ * routeRequest produced, so every response path (including error and 401
+ * helpers that build their own headers) carries the correct Origin policy.
+ */
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const response = await routeRequest(request, env);
+    const headers = new Headers(response.headers);
+    const cors = corsHeaders(request.headers.get("origin"), env);
+    for (const [key, value] of Object.entries(cors)) {
+      headers.set(key, value);
+    }
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
   },
 };
 

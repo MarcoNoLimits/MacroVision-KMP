@@ -42,7 +42,7 @@ function createTestEnv(overrides = {}) {
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
-test("GET /health returns 200 and healthy status", async () => {
+test("GET /health returns 200 and healthy status without leaking internals", async () => {
   const env = createTestEnv();
   const req = new Request("https://gateway.fitter.app/health");
   const res = await gateway.fetch(req, env);
@@ -50,7 +50,59 @@ test("GET /health returns 200 and healthy status", async () => {
   assert.equal(res.status, 200);
   const data = await res.json();
   assert.equal(data.status, "healthy");
-  assert.equal(data.service, "fitter-gateway");
+  // Health is unauthenticated, so it must not disclose deployment metadata.
+  assert.equal(data.service, undefined);
+  assert.equal(data.env, undefined);
+});
+
+test("GET /privacy returns 200 with HTML privacy policy", async () => {
+  const env = createTestEnv();
+  const req = new Request("https://gateway.fitter.app/privacy");
+  const res = await gateway.fetch(req, env);
+
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get("Content-Type") || "", /text\/html/);
+  const body = await res.text();
+  assert.match(body, /Privacy Policy/);
+  assert.match(body, /Not medical advice/);
+});
+
+test("GET /health does not reflect a wildcard CORS origin", async () => {
+  const env = createTestEnv();
+  const req = new Request("https://gateway.fitter.app/health", {
+    headers: { Origin: "https://evil.example" },
+  });
+  const res = await gateway.fetch(req, env);
+
+  assert.notEqual(res.headers.get("Access-Control-Allow-Origin"), "*");
+  assert.equal(res.headers.get("Access-Control-Allow-Origin"), null);
+});
+
+test("GET /health reflects an explicitly allowlisted origin", async () => {
+  const env = createTestEnv({ ALLOWED_ORIGINS: "https://app.fitter.app" });
+  const req = new Request("https://gateway.fitter.app/health", {
+    headers: { Origin: "https://app.fitter.app" },
+  });
+  const res = await gateway.fetch(req, env);
+
+  assert.equal(res.headers.get("Access-Control-Allow-Origin"), "https://app.fitter.app");
+  assert.equal(res.headers.get("Vary"), "Origin");
+});
+
+test("RevenueCat webhook fails closed when the secret is missing in production", async () => {
+  const env = createTestEnv({ FITTER_ENV: "production" });
+  delete env.REVENUECAT_WEBHOOK_SECRET;
+  const req = new Request("https://gateway.fitter.app/v1/webhook/revenuecat", {
+    method: "POST",
+    body: JSON.stringify({
+      event: { app_user_id: "attacker", entitlement_id: "fitter_premium", type: "INITIAL_PURCHASE" },
+    }),
+  });
+  const res = await gateway.fetch(req, env);
+
+  assert.equal(res.status, 503);
+  // The forged entitlement must NOT have been written.
+  assert.equal(await env.VLM_CACHE.get(`entitlement:attacker:fitter_premium`), null);
 });
 
 test("Kill switch returns 503 when active", async () => {
@@ -89,6 +141,30 @@ test("POST /v1/recalculate rejects unauthenticated request with 401", async () =
   assert.equal(res.status, 401);
   const data = await res.json();
   assert.equal(data.error, "Unauthorized");
+});
+
+test("POST /v1/account/delete requires authentication (Play account-deletion path)", async () => {
+  const env = createTestEnv();
+  const req = new Request("https://gateway.fitter.app/v1/account/delete", {
+    method: "POST",
+    body: JSON.stringify({ confirm: true }),
+  });
+  const res = await gateway.fetch(req, env);
+
+  assert.equal(res.status, 401);
+});
+
+test("POST /v1/account/delete rejects a forged user_id in the body", async () => {
+  const env = createTestEnv();
+  const req = new Request("https://gateway.fitter.app/v1/account/delete", {
+    method: "POST",
+    headers: { Authorization: "Bearer malformed.jwt.token" },
+    body: JSON.stringify({ confirm: true, user_id: "someone-else" }),
+  });
+  const res = await gateway.fetch(req, env);
+
+  // The body value must never be trusted; an unverifiable JWT is rejected outright.
+  assert.equal(res.status, 401);
 });
 
 test("GET /v1/entitlements rejects unauthenticated request with 401", async () => {

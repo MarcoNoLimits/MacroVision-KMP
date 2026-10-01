@@ -62,8 +62,9 @@ kotlin {
             implementation(libs.camerax.lifecycle)
             implementation(libs.camerax.view)
             
-            // Google Mobile Ads (AdMob)
+            // Google Mobile Ads (AdMob) + User Messaging Platform (UMP Consent)
             implementation(libs.play.services.ads)
+            implementation("com.google.android.ump:user-messaging-platform:3.1.0")
             
             // AppLovin MAX SDK & Google Bidding Adapter (Task 3: Unified In-App Bidding)
             implementation("com.applovin:applovin-sdk:13.6.4")

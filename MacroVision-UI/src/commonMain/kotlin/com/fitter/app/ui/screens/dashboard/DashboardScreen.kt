@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
@@ -60,6 +61,7 @@ fun DashboardScreen(
     onScanClicked: () -> Unit,
     onSettingsClicked: () -> Unit,
     onMonetizationClicked: () -> Unit,
+    onOpenFoodLibrary: () -> Unit = {},
     onDeleteMeal: (LoggedMeal) -> Unit,
     onRestoreMeal: (LoggedMeal) -> Unit
 ) {
@@ -146,6 +148,24 @@ fun DashboardScreen(
                 }
 
                 Row {
+                    // Food Library — browsable reference content. First-class surface
+                    // (not buried in Settings): AdMob rejected Fitter partly for thin
+                    // content, and this is genuine user value independent of scanning.
+                    IconButton(
+                        onClick = onOpenFoodLibrary,
+                        modifier = Modifier
+                            .size(44.dp) // F0.3: min 44dp hit area
+                            .shadow(1.dp, CircleShape)
+                            .background(Color.White, CircleShape)
+                            .border(1.dp, BorderColor, CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Menu,
+                            contentDescription = "Food Library",
+                            tint = TextColor,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                     // Ads & Perks - monetization is a first-class surface, NOT buried in Settings.
                     // Star icon opens the dedicated Ads & Perks screen (quota, rewarded ads, provider).
                     IconButton(

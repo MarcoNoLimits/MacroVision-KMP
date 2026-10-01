@@ -20,3 +20,12 @@ object SettingsDestination
 
 @Serializable
 object AuthDestination
+
+@Serializable
+object PrivacyPolicyDestination
+
+@Serializable
+object TermsDestination
+
+@Serializable
+object FoodLibraryDestination

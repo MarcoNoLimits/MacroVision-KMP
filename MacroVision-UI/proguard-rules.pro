@@ -42,3 +42,15 @@
 -keepclassmembers class com.applovin.sdk.AppLovinSdkSettings { private java.util.Map localSettings; }
 -keep class com.applovin.mediation.adapters.** { *; }
 -keep class com.applovin.mediation.adapter.** { *; }
+
+# Google User Messaging Platform (UMP Consent)
+-keep class com.google.android.ump.** { *; }
+-dontwarn com.google.android.ump.**
+
+# Supabase & Ktor
+-dontwarn io.github.jan.supabase.**
+-keep class io.github.jan.supabase.** { *; }
+
+# Coil
+-dontwarn coil3.**
+

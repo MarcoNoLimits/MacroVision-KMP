@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.fitter.app.ads.AdBanner
 import com.fitter.app.notifications.MealReminder
 import com.fitter.app.notifications.MealReminderManager
@@ -31,6 +32,7 @@ import com.fitter.app.ui.components.FitterTextField
 import com.fitter.app.ui.components.PressableBox
 import com.fitter.app.ui.components.calculateBmr
 import com.fitter.app.ui.components.plateSizeInchesToCmString
+import com.fitter.app.privacy.PrivacyConsent
 import com.fitter.app.ui.theme.*
 import com.fitter.shared.model.UserProfile
 
@@ -44,7 +46,10 @@ fun SettingsScreen(
     onNavigateToAuth: () -> Unit = {},
     onSignOut: () -> Unit = {},
     onSave: (UserProfile) -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onDeleteAllData: (() -> Unit)? = null,
+    onOpenPrivacyPolicy: () -> Unit = {},
+    onOpenTerms: () -> Unit = {},
 ) {
     val scrollState = rememberScrollState()
 
@@ -65,6 +70,10 @@ fun SettingsScreen(
     var mealReminders by remember { mutableStateOf(MealReminderManager.getReminders()) }
     var editingReminder by remember { mutableStateOf<MealReminder?>(null) }
     var isAddingNewReminder by remember { mutableStateOf(false) }
+
+    // GDPR Art. 7(3) — consent must be as easy to withdraw as to give.
+    var personalizedAds by remember { mutableStateOf(PrivacyConsent.isAdsPersonalizationEnabled()) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
     var isError by remember { mutableStateOf(false) }
 
@@ -708,6 +717,133 @@ fun SettingsScreen(
             }
         }
 
+        // ── Privacy & Data (GDPR Arts. 7(3), 15, 17) ───────────────────────────
+        // Withdrawable consent + erasure. Both are legally mandatory; without this
+        // block the app cannot lawfully claim a valid GDPR compliance posture.
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = "Privacy & Data",
+                style = BrandTypography.SectionTitle,
+                color = TextColor,
+                fontWeight = FontWeight.Bold,
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(CardBackground, RoundedCornerShape(12.dp))
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = "Personalized ads",
+                        style = BrandTypography.SectionTitle,
+                        color = TextColor,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = if (personalizedAds) {
+                            "On — ad partners may tailor ads to your activity."
+                        } else {
+                            "Off — ads are non-personalized. Free tier stays fully functional."
+                        },
+                        style = BrandTypography.BodySmall,
+                        color = MutedTextColor,
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Switch(
+                    checked = personalizedAds,
+                    onCheckedChange = { enabled ->
+                        personalizedAds = enabled
+                        if (enabled) {
+                            PrivacyConsent.recordDecision(
+                                acceptTerms = true,
+                                adsPersonalized = true,
+                                timestampMs = System.currentTimeMillis(),
+                            )
+                        } else {
+                            PrivacyConsent.revokeOptionalConsent()
+                        }
+                    },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = CardBackground,
+                        checkedTrackColor = PrimaryAccent,
+                        uncheckedThumbColor = CardBackground,
+                        uncheckedTrackColor = BorderColor,
+                    ),
+                )
+            }
+
+            // Legal documents — required by Google Play, the App Store, and AdMob policy review.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                OutlinedButton(
+                    onClick = onOpenPrivacyPolicy,
+                    modifier = Modifier.weight(1f).height(46.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, BorderColor),
+                ) {
+                    Text("Privacy Policy", fontSize = 13.sp, color = TextColor)
+                }
+                OutlinedButton(
+                    onClick = onOpenTerms,
+                    modifier = Modifier.weight(1f).height(46.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, BorderColor),
+                ) {
+                    Text("Terms of Service", fontSize = 13.sp, color = TextColor)
+                }
+            }
+
+            // Erasure — GDPR Art. 17 right to be forgotten.
+            if (onDeleteAllData != null) {
+                OutlinedButton(
+                    onClick = { showDeleteConfirm = true },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = DangerColor),
+                ) {
+                    Text("Delete my account and data", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                }
+            }
+
+            // Medical disclaimer — visible in settings, not only at first launch.
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(DangerSoft, RoundedCornerShape(12.dp))
+                    .border(1.dp, DangerBorder, RoundedCornerShape(12.dp))
+                    .padding(14.dp),
+            ) {
+                Column {
+                    Text(
+                        text = "Not medical advice",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = DangerTextStrong,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "All nutrition values in Fitter are automated estimates and are " +
+                            "approximate. They are not medical advice and do not replace a " +
+                            "registered dietitian or physician. Do not use Fitter to manage " +
+                            "diabetes, eating disorders, allergies, pregnancy, or any medical " +
+                            "condition.",
+                        fontSize = 12.sp,
+                        color = DangerTextStrong,
+                        lineHeight = 17.sp,
+                    )
+                }
+            }
+        }
+
         // Validation Error Message
         if (isError) {
             Row(
@@ -781,6 +917,17 @@ fun SettingsScreen(
             )
         }
     }
+    }
+
+    if (showDeleteConfirm && onDeleteAllData != null) {
+        DeleteDataConfirmDialog(
+            onConfirm = {
+                showDeleteConfirm = false
+                PrivacyConsent.clearAll()
+                onDeleteAllData()
+            },
+            onDismiss = { showDeleteConfirm = false },
+        )
     }
 
     editingReminder?.let { target ->
@@ -899,6 +1046,50 @@ private fun MealReminderEditorDialog(
                 Text("Cancel", color = TextColor)
             }
         }
+    )
+}
+
+/**
+ * GDPR Art. 17 confirmation. Erasure is irreversible, so it requires an explicit
+ * confirm step distinct from the button that opened it — and the action must not
+ * be discoverable by accident (one tap to open, second deliberate tap to execute).
+ */
+@Composable
+private fun DeleteDataConfirmDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Delete all data?", color = TextColor) },
+        text = {
+            Text(
+                "This permanently deletes your account, meal photos, nutrition history, " +
+                    "water logs and settings from our servers and this device. It cannot be " +
+                    "undone. Your Premium subscription will not be refunded.",
+                color = TextColor,
+                fontSize = 14.sp,
+                lineHeight = 19.sp,
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(containerColor = DangerColor),
+                shape = RoundedCornerShape(RadiusM),
+            ) {
+                Text("Delete everything", color = Color.White)
+            }
+        },
+        dismissButton = {
+            OutlinedButton(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(RadiusM),
+                border = BorderStroke(1.dp, BorderColor),
+            ) {
+                Text("Cancel", color = TextColor)
+            }
+        },
     )
 }
 

@@ -5,10 +5,18 @@ import platform.Foundation.NSDate
 import platform.Foundation.NSDateFormatter
 import platform.Foundation.NSCalendar
 import platform.Foundation.NSCalendarUnitDay
+import com.fitter.app.privacy.PrivacyConsent
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
 import kotlinx.cinterop.useContents
+import platform.AppTrackingTransparency.ATTrackingManager
+import platform.AppTrackingTransparency.AuthorizationStatus
+import platform.AppTrackingTransparency.ATRequestTrackingAuthorization
+import platform.AppTrackingTransparency.ATTrackingAuthorizationStatusAuthorized
+import platform.Foundation.NSBundle
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 import platform.Foundation.NSData
 import platform.Foundation.create
 import platform.UIKit.UIImage
@@ -39,6 +47,72 @@ actual fun savePreference(key: String, value: String) {
 
 actual fun loadPreference(key: String, defaultValue: String): String {
     return NSUserDefaults.standardUserDefaults.stringForKey(key) ?: defaultValue
+}
+
+/**
+ * Builds the consent storage backed by NSUserDefaults.
+ *
+ * iOS never wired initPrivacyConsentStore(), which under the previous design
+ * meant consent silently reset to "not accepted" on every launch — trapping the
+ * user in the consent gate. PrivacyConsent now lazily calls this factory, so the
+ * platform hook is present on both platforms regardless of entry-point ordering.
+ */
+actual fun createConsentStorage(): PrivacyConsent.ConsentStorage {
+    return object : PrivacyConsent.ConsentStorage {
+        override fun getBoolean(key: String, default: Boolean): Boolean =
+            if (NSUserDefaults.standardUserDefaults.objectForKey(key) == null) default
+            else NSUserDefaults.standardUserDefaults.boolForKey(key)
+
+        override fun putBoolean(key: String, value: Boolean) {
+            NSUserDefaults.standardUserDefaults.setBool(value, forKey = key)
+        }
+
+        override fun getLong(key: String, default: Long): Long =
+            if (NSUserDefaults.standardUserDefaults.objectForKey(key) == null) default
+            else NSUserDefaults.standardUserDefaults.integerForKey(key)
+
+        override fun putLong(key: String, value: Long) {
+            NSUserDefaults.standardUserDefaults.setInteger(value, forKey = key)
+        }
+    }
+}
+
+/** Binds NSUserDefaults into the shared consent store so choices persist across launches. */
+actual fun initPrivacyConsentStore() {
+    PrivacyConsent.bindStorage(createConsentStorage())
+}
+
+/**
+ * iOS consent: App Tracking Transparency (ATT).
+ *
+ * Info.plist declares NSUserTrackingUsageDescription, so iOS REQUIRES the system
+ * prompt before any tracking — without this call the app is rejected or the
+ * prompt never appears while ads still track. Must be awaited before ad requests.
+ *
+ * Returns true only when the user grants tracking authorization.
+ */
+@Suppress("unused", "OPT_IN_USAGE")
+actual suspend fun requestPlatformAdConsent(): Boolean = suspendCancellableCoroutine { cont ->
+    try {
+        val status = ATTrackingManager.trackingAuthorizationStatus
+        if (status == ATTrackingAuthorizationStatusAuthorized) {
+            cont.resume(true)
+            return@suspendCancellableCoroutine
+        }
+        if (status != AuthorizationStatus.AuthorizationStatusNotDetermined) {
+            // Previously denied/restricted — do not re-prompt; report the standing decision.
+            cont.resume(false)
+            return@suspendCancellableCoroutine
+        }
+
+        ATTrackingManager.requestTrackingAuthorizationWithCompletionHandler { newStatus ->
+            cont.resume(newStatus == ATTrackingAuthorizationStatusAuthorized)
+        }
+    } catch (t: Throwable) {
+        // Fail closed: never treat an ATT failure as permission to track.
+        NSLog("Fitter_Privacy: ATT request failed: ${t.message}")
+        cont.resume(false)
+    }
 }
 
 actual fun getCurrentTimeString(): String {
