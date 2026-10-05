@@ -54,7 +54,8 @@ fun CameraScreen(
     onNavigateBack: () -> Unit,
     scanReadiness: ScanReadiness = ScanReadiness.Ready,
     scansRemaining: Int = 1,
-    onBonusScansEarned: (suspend () -> Unit)? = null
+    onBonusScansEarned: (suspend () -> Unit)? = null,
+    onCreateAccount: (() -> Unit)? = null,
 ) {
     val coroutineScope = rememberCoroutineScope()
 
@@ -224,6 +225,24 @@ fun CameraScreen(
                                     color = Color.White,
                                     fontWeight = FontWeight.Bold
                                 )
+                            }
+
+                            if (onCreateAccount != null) {
+                                OutlinedButton(
+                                    onClick = onCreateAccount,
+                                    shape = RoundedCornerShape(RadiusM),
+                                    border = BorderStroke(1.dp, PrimaryAccent),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = 48.dp)
+                                ) {
+                                    Text(
+                                        text = "Create Free Account (+1 Scan Every Day)",
+                                        color = PrimaryAccent,
+                                        fontWeight = FontWeight.SemiBold,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
                             }
 
                             OutlinedButton(

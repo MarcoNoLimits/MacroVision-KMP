@@ -32,6 +32,7 @@ object PlatformConfig {
     var gatewayUrl: String = ""
     var supabaseUrl: String = ""
     var supabaseAnonKey: String = ""
+    var googleWebClientId: String = ""
     val adManager = com.fitcal.app.ads.IosAdManager()
 }
 
@@ -40,6 +41,21 @@ actual val gatewayUrl: String get() = PlatformConfig.gatewayUrl
 actual val supabaseUrl: String get() = PlatformConfig.supabaseUrl
 actual val supabaseAnonKey: String get() = PlatformConfig.supabaseAnonKey
 actual val isDebugBuild: Boolean = true
+actual val googleWebClientId: String get() = PlatformConfig.googleWebClientId
+
+// compose-auth only signs in with Google natively on Android; iOS offers Sign in with Apple.
+actual val isGoogleSignInAvailable: Boolean get() = false
+actual val isAppleSignInAvailable: Boolean get() = true
+
+@OptIn(com.russhwolf.settings.ExperimentalSettingsImplementation::class)
+actual fun createSecureStringStore(): com.fitcal.shared.auth.SecureStringStore? {
+    val keychain = com.russhwolf.settings.KeychainSettings(service = "com.fitcal.app.auth")
+    return object : com.fitcal.shared.auth.SecureStringStore {
+        override fun get(key: String): String? = keychain.getStringOrNull(key)
+        override fun put(key: String, value: String) = keychain.putString(key, value)
+        override fun remove(key: String) = keychain.remove(key)
+    }
+}
 
 actual fun savePreference(key: String, value: String) {
     NSUserDefaults.standardUserDefaults.setObject(value, forKey = key)

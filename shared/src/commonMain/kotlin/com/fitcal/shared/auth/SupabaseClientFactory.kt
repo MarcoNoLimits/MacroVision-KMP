@@ -1,6 +1,7 @@
 package com.fitcal.shared.auth
 
 import io.github.jan.supabase.SupabaseClient
+import io.github.jan.supabase.SupabaseClientBuilder
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.auth.Auth
 import io.github.jan.supabase.auth.MemoryCodeVerifierCache
@@ -21,7 +22,9 @@ object SupabaseClientFactory {
     fun getOrCreate(
         url: String = TEST_LOCAL_URL,
         anonKey: String = TEST_LOCAL_KEY,
-        schema: String = "fitcal"
+        schema: String = "fitcal",
+        secureStore: SecureStringStore? = null,
+        configure: SupabaseClientBuilder.() -> Unit = {},
     ): SupabaseClient {
         require(!url.contains("placeholder", ignoreCase = true)) {
             "SUPABASE_URL cannot contain placeholder: $url"
@@ -37,10 +40,15 @@ object SupabaseClientFactory {
             ) {
 
                 install(Auth) {
-                    sessionManager = try {
+                    val plaintext = try {
                         SettingsSessionManager()
                     } catch (_: Throwable) {
-                        MemorySessionManager()
+                        null
+                    }
+                    sessionManager = when {
+                        secureStore != null -> SecureSessionManager(secureStore, legacy = plaintext)
+                        plaintext != null -> plaintext
+                        else -> MemorySessionManager()
                     }
                     codeVerifierCache = try {
                         SettingsCodeVerifierCache()
@@ -58,6 +66,7 @@ object SupabaseClientFactory {
                     defaultSchema = schema
                 }
                 install(Realtime)
+                configure()
             }.also { instance = it }
         }
     }

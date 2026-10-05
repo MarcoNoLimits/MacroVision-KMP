@@ -1,8 +1,10 @@
 package com.fitcal.app
 
 import com.fitcal.app.ads.ScanQuotaManager
+import com.fitcal.app.ui.screens.auth.checkPassword
 import com.fitcal.app.ui.screens.auth.isValidEmail
 import com.fitcal.app.ui.screens.auth.isValidPassword
+import com.fitcal.app.ui.screens.auth.sanitizeOtp
 import kotlin.test.*
 
 class AccountAuthTest {
@@ -42,12 +44,38 @@ class AccountAuthTest {
     }
 
     @Test
-    fun testPasswordLengthValidation() {
-        assertTrue(isValidPassword("123456"))
-        assertTrue(isValidPassword("superSecretP@ss!"))
+    fun testPasswordPolicyValidation() {
+        assertTrue(isValidPassword("superSecretP4ss"))
+        assertTrue(isValidPassword("Abcdefg1"))
 
         assertFalse(isValidPassword(""))
-        assertFalse(isValidPassword("12345"))
+        assertFalse(isValidPassword("Abcde1"), "too short")
+        assertFalse(isValidPassword("abcdefg1"), "no uppercase")
+        assertFalse(isValidPassword("ABCDEFG1"), "no lowercase")
+        assertFalse(isValidPassword("Abcdefgh"), "no digit")
+    }
+
+    @Test
+    fun testPasswordChecksReportEachRule() {
+        val checks = checkPassword("abc")
+        assertFalse(checks.hasMinLength)
+        assertFalse(checks.hasUpperAndLower)
+        assertFalse(checks.hasDigit)
+        assertEquals(0, checks.passedCount)
+        assertEquals(3, checkPassword("Abcdefg1").passedCount)
+    }
+
+    @Test
+    fun testOtpSanitizingAcceptsPastedCodes() {
+        assertEquals("123456", sanitizeOtp("123 456"))
+        assertEquals("123456", sanitizeOtp("Code: 123456789"))
+        assertEquals("", sanitizeOtp("abc"))
+    }
+
+    @Test
+    fun testEmailRejectsSpacesAndDoubleAt() {
+        assertFalse(isValidEmail("a b@example.com"))
+        assertFalse(isValidEmail("a@b@example.com"))
     }
 
     @Test

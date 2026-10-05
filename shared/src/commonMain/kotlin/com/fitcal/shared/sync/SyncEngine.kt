@@ -97,6 +97,23 @@ class SyncEngine(
         triggerFlush()
     }
 
+    suspend fun enqueueAll(items: List<OutboxItem>) {
+        if (items.isEmpty()) return
+        mutex.withLock {
+            saveOutboxLocked(loadOutboxLocked() + items)
+        }
+        triggerFlush()
+    }
+
+    suspend fun pendingCount(): Int = mutex.withLock { loadOutboxLocked().size }
+
+    suspend fun clearOutbox() {
+        mutex.withLock {
+            storage.remove(KEY_OUTBOX)
+            storage.remove(LEGACY_KEY_OUTBOX)
+        }
+    }
+
     fun triggerFlush() {
         scope.launch {
             flushOutbox()

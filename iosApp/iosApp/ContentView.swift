@@ -4,12 +4,12 @@ import ComposeApp
 
 struct ComposeView: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> UIViewController {
-        let openRouterApiKey = Bundle.main.infoDictionary?["OpenRouterApiKey"] as? String ?? ""
-        let geminiApiKey = Bundle.main.infoDictionary?["GeminiApiKey"] as? String ?? ""
-        let groqApiKey = Bundle.main.infoDictionary?["GroqApiKey"] as? String ?? ""
-        PlatformConfig.shared.openRouterApiKey = openRouterApiKey
-        PlatformConfig.shared.geminiApiKey = geminiApiKey
-        PlatformConfig.shared.groqApiKey = groqApiKey
+        // Values come from Config.xcconfig via Info.plist. Only public client config lives
+        // here; paid AI keys stay on the server.
+        let info = Bundle.main.infoDictionary ?? [:]
+        PlatformConfig.shared.gatewayUrl = info["FitCalGatewayUrl"] as? String ?? ""
+        PlatformConfig.shared.supabaseUrl = info["FitCalSupabaseUrl"] as? String ?? ""
+        PlatformConfig.shared.supabaseAnonKey = info["FitCalSupabaseAnonKey"] as? String ?? ""
         return MainViewControllerKt.MainViewController()
     }
 

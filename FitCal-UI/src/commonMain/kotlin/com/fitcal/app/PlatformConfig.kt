@@ -7,6 +7,17 @@ expect val gatewayUrl: String
 expect val supabaseUrl: String
 expect val supabaseAnonKey: String
 
+// Google OAuth "Web application" client ID, used as serverClientId for native Google sign-in.
+expect val googleWebClientId: String
+
+// Native social sign-in offered on this platform (Google via Credential Manager on Android,
+// Sign in with Apple on iOS).
+expect val isGoogleSignInAvailable: Boolean
+expect val isAppleSignInAvailable: Boolean
+
+// Encrypted-at-rest storage for the auth session (Android Keystore / iOS Keychain).
+expect fun createSecureStringStore(): com.fitcal.shared.auth.SecureStringStore?
+
 expect fun savePreference(key: String, value: String)
 expect fun loadPreference(key: String, defaultValue: String): String
 

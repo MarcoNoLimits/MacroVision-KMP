@@ -54,6 +54,12 @@
 		<string>This identifier helps us personalize ads and sponsors in the app. You can decline this in Settings and still use every FitCal feature.</string>
 		<key>GADApplicationIdentifier</key>
 		<string>$(GOOGLE_ADS_APP_ID)</string>
+		<key>FitCalGatewayUrl</key>
+		<string>$(GATEWAY_URL)</string>
+		<key>FitCalSupabaseUrl</key>
+		<string>$(SUPABASE_URL)</string>
+		<key>FitCalSupabaseAnonKey</key>
+		<string>$(SUPABASE_ANON_KEY)</string>
 		<key>SKAdNetworkItems</key>
 		<array>
 		<dict>

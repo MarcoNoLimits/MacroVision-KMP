@@ -25,7 +25,8 @@ This file is the authoritative instruction set for any agent (AI or human) worki
 - VLM failover sequencing (OpenRouter → Gemini → Groq)
 - Interactive corrections & local recalculation (~10x faster than re-upload)
 - Local food database grounding + Search-to-Swap overlay
-- Daily scan quota (`ScanQuotaManager`): currently 3 free scans/day, +2 bonus scans per rewarded ad
+- Daily scan quota (`ScanQuotaManager`): currently 3 free scans/day, +2 bonus scans per rewarded ad, +1 free scan/day for permanent accounts (see 5.1)
+- Sign-in is optional and never blocks scanning: guests are anonymous Supabase users; creating an account upgrades the same user in place (`SupabaseAuthService`)
 - Ad layer: `AdManager` interface + `AndroidAdManager` (AdMob test units)
 
 ## 4. Task List
@@ -56,6 +57,7 @@ This file is the authoritative instruction set for any agent (AI or human) worki
 - **Week 1 (first 7 days after install)**: **5 free AI scans/day**, zero ad interruption. Goal = habit formation.
 - **Week 2+ (day 8 onward)**: **3 free AI scans/day**.
 - Implement in `ScanQuotaManager`: the free limit is higher for users whose `firstInstallDate < 7 days`. Persist `firstInstallDate` in preferences.
+- **Account bonus**: permanent accounts (confirmed email or linked Google/Apple identity) get **+1 free scan/day** on top of the above (so 6 in week 1, 4 after). The server is authoritative: `supabase/functions/analyze-meal` computes the allowance from the verified user and ignores the client's value; `consume_scan` clamps at 6 (migration 0007). The client figure is display-only.
 
 ### 5.2 Forced Interstitial on Scan #4+ (Task 2)
 

@@ -83,6 +83,7 @@ object AdConfig {
     const val WEEK_ONE_DAILY_FREE_SCANS = 5
     const val DEFAULT_DAILY_FREE_SCANS = 3
     const val REWARDED_SCAN_BONUS = 2
+    const val ACCOUNT_DAILY_BONUS_SCANS = 1
     const val SEVEN_DAYS_MILLIS = 7L * 24 * 60 * 60 * 1000L
     const val APP_OPEN_COOLDOWN_MILLIS = 4L * 60 * 60 * 1000L
     const val APP_OPEN_SESSION_GRACE_COUNT = 3
@@ -144,11 +145,15 @@ object ScanQuotaManager {
 
     var remoteQuotaManager: com.fitcal.shared.quota.SupabaseQuotaManager? = null
 
+    /** True when the user has a permanent account (earns [AdConfig.ACCOUNT_DAILY_BONUS_SCANS]). */
+    var isPermanentAccountProvider: () -> Boolean = { false }
+
     fun resetToDefaults() {
         preferenceReader = { key, default -> loadPreference(key, default) }
         preferenceWriter = { key, value -> savePreference(key, value) }
         currentTimeMillisProvider = { getCurrentEpochMillis() }
         remoteQuotaManager = null
+        isPermanentAccountProvider = { false }
     }
 
     fun getFirstInstallTimestamp(): Long {
@@ -168,11 +173,13 @@ object ScanQuotaManager {
     }
 
     fun getDailyFreeLimit(): Int {
-        return if (isWeekOneUser()) {
+        val base = if (isWeekOneUser()) {
             AdConfig.WEEK_ONE_DAILY_FREE_SCANS
         } else {
             AdConfig.DEFAULT_DAILY_FREE_SCANS
         }
+        val accountBonus = if (isPermanentAccountProvider()) AdConfig.ACCOUNT_DAILY_BONUS_SCANS else 0
+        return base + accountBonus
     }
 
     fun getUsedScans(dateKey: String): Int {

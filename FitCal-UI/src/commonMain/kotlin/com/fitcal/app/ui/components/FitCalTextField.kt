@@ -8,7 +8,13 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.autofill.ContentType
+import androidx.compose.ui.semantics.contentType
+import androidx.compose.ui.text.input.ImeAction
+import com.fitcal.app.ui.theme.DangerColor
+import com.fitcal.app.ui.theme.DangerTextStrong
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -48,7 +54,14 @@ fun FitCalTextField(
     keyboardType: KeyboardType = KeyboardType.Number,
     unit: String? = null,
     visualTransformation: VisualTransformation = VisualTransformation.None,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    trailingIcon: (@Composable () -> Unit)? = null,
+    isError: Boolean = false,
+    supportingText: String? = null,
+    enabled: Boolean = true,
+    imeAction: ImeAction = ImeAction.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
+    autofillType: ContentType? = null,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val colors = OutlinedTextFieldDefaults.colors(
@@ -60,7 +73,14 @@ fun FitCalTextField(
         focusedTextColor = TextColor,
         unfocusedTextColor = TextColor,
         focusedContainerColor = CardBackground,
-        unfocusedContainerColor = CardBackground
+        unfocusedContainerColor = CardBackground,
+        disabledContainerColor = CardBackground,
+        errorBorderColor = DangerColor,
+        errorLabelColor = DangerColor,
+        errorSupportingTextColor = DangerTextStrong,
+        errorContainerColor = CardBackground,
+        errorCursorColor = DangerColor,
+        errorTextColor = TextColor,
     )
 
     val field = @Composable { fieldModifier: Modifier ->
@@ -73,12 +93,16 @@ fun FitCalTextField(
                 fontWeight = FontWeight.Medium,
                 color = TextColor
             ),
-            cursorBrush = SolidColor(PrimaryAccent),
-            keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+            cursorBrush = SolidColor(if (isError) DangerColor else PrimaryAccent),
+            keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = imeAction),
+            keyboardActions = keyboardActions,
+            enabled = enabled,
             visualTransformation = visualTransformation,
             interactionSource = interactionSource,
             modifier = fieldModifier
-                .semantics(mergeDescendants = true) {}
+                .semantics(mergeDescendants = true) {
+                    if (autofillType != null) contentType = autofillType
+                }
                 .padding(top = 8.dp)
                 .defaultMinSize(
                     minWidth = OutlinedTextFieldDefaults.MinWidth,
@@ -97,15 +121,19 @@ fun FitCalTextField(
                             fontWeight = FontWeight.Medium
                         )
                     },
+                    trailingIcon = trailingIcon,
+                    supportingText = supportingText?.let {
+                        { Text(text = it, style = BrandTypography.Micro) }
+                    },
                     singleLine = true,
-                    enabled = true,
-                    isError = false,
+                    enabled = enabled,
+                    isError = isError,
                     interactionSource = interactionSource,
                     colors = colors,
                     container = {
                         OutlinedTextFieldDefaults.Container(
-                            enabled = true,
-                            isError = false,
+                            enabled = enabled,
+                            isError = isError,
                             interactionSource = interactionSource,
                             colors = colors,
                             shape = RoundedCornerShape(RadiusS),

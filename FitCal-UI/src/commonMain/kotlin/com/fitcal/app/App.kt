@@ -30,7 +30,21 @@ import com.fitcal.app.ui.screens.privacy.AgeGateScreen
 import com.fitcal.app.ui.screens.library.FoodLibraryScreen
 import com.fitcal.app.privacy.AgeGate
 import com.fitcal.app.ui.components.newMealId
+import com.fitcal.app.auth.SignInPromptPolicy
+import com.fitcal.app.ui.screens.auth.AuthActions
 import com.fitcal.app.ui.screens.auth.AuthScreen
+import com.fitcal.app.ui.screens.auth.SocialSignIn
+import com.fitcal.shared.auth.AuthMessages
+import com.fitcal.shared.auth.EmailSignUpStart
+import com.fitcal.shared.data.AccountDataManager
+import io.github.jan.supabase.compose.auth.ComposeAuth
+import io.github.jan.supabase.compose.auth.IdTokenCallback
+import io.github.jan.supabase.compose.auth.appleNativeLogin
+import io.github.jan.supabase.compose.auth.composable.NativeSignInResult
+import io.github.jan.supabase.compose.auth.composable.rememberSignInWithApple
+import io.github.jan.supabase.compose.auth.composable.rememberSignInWithGoogle
+import io.github.jan.supabase.compose.auth.composeAuth
+import io.github.jan.supabase.compose.auth.googleNativeLogin
 import com.fitcal.app.ui.screens.camera.CameraScreen
 import com.fitcal.app.ui.screens.dashboard.DashboardScreen
 import com.fitcal.app.ui.screens.monetization.MonetizationScreen
@@ -63,9 +77,22 @@ fun App() {
             com.fitcal.shared.subscription.SubscriptionManager.initialize(it)
         }
     }
-    val supabaseClient = remember { SupabaseClientFactory.getOrCreate(supabaseUrl, supabaseAnonKey) }
+    val supabaseClient = remember {
+        SupabaseClientFactory.getOrCreate(
+            url = supabaseUrl,
+            anonKey = supabaseAnonKey,
+            secureStore = createSecureStringStore(),
+        ) {
+            install(ComposeAuth) {
+                if (isGoogleSignInAvailable) googleNativeLogin(serverClientId = googleWebClientId)
+                if (isAppleSignInAvailable) appleNativeLogin()
+            }
+        }
+    }
     val authService = remember {
-        SupabaseAuthService(supabaseUrl, supabaseAnonKey)
+        SupabaseAuthService(supabaseClient).also { service ->
+            ScanQuotaManager.isPermanentAccountProvider = { service.isPermanentUser() }
+        }
     }
     val quotaManager = remember {
         com.fitcal.shared.quota.SupabaseQuotaManager(supabaseClient).apply {
@@ -83,19 +110,24 @@ fun App() {
     val syncEngine = remember {
         com.fitcal.shared.sync.SyncEngine(storage, supabaseClient)
     }
+    val localMealRepository = remember { LocalMealRepository(storage) }
+    val localUserRepository = remember { LocalUserRepository(storage) }
     val mealRepository: MealRepository = remember {
         com.fitcal.shared.data.SupabaseMealRepository(
-            LocalMealRepository(storage),
+            localMealRepository,
             syncEngine,
             supabaseClient
         )
     }
     val userRepository: UserRepository = remember {
         com.fitcal.shared.data.SupabaseUserRepository(
-            LocalUserRepository(storage),
+            localUserRepository,
             syncEngine,
             supabaseClient
         )
+    }
+    val accountData = remember {
+        AccountDataManager(localMealRepository, localUserRepository, syncEngine, ::newMealId)
     }
 
     var userProfile by remember {
@@ -199,11 +231,40 @@ fun App() {
             // null = boot in-flight | true = auth confirmed | false = offline (all retries failed)
             var authReady by remember { mutableStateOf<Boolean?>(null) }
 
-            // Optional account email (null when using FitCal as an anonymous guest)
-            var userEmail by remember { mutableStateOf(authService.getCurrentUserEmail()) }
+            // Account email, shown only for permanent accounts (null while using FitCal as a guest)
+            fun accountEmailOrNull(): String? =
+                if (authService.isPermanentUser()) authService.getCurrentUserEmail() ?: "your account" else null
+            var userEmail by remember { mutableStateOf(accountEmailOrNull()) }
+            var signingOut by remember { mutableStateOf(false) }
+            var signOutMessage by remember { mutableStateOf<String?>(null) }
+            var totalMealsLogged by remember { mutableStateOf(0) }
+            LaunchedEffect(Unit) { totalMealsLogged = localMealRepository.getAllMeals().size }
 
             var scansRemainingToday by remember(selectedDateKey) {
                 mutableStateOf(ScanQuotaManager.getRemainingScans(selectedDateKey))
+            }
+
+            // Runs after any sign-in. When the user ID changed (a guest signed into an existing
+            // account), the guest's meals are moved into that account before pulling its data.
+            suspend fun switchAccount(signIn: suspend () -> Unit) {
+                val previousUserId = authService.getUserId()
+                val wasGuest = !authService.isPermanentUser()
+                signIn()
+                if (wasGuest && authService.getUserId() != previousUserId) {
+                    accountData.mergeGuestMealsIntoCurrentAccount()
+                }
+                userEmail = accountEmailOrNull()
+                signOutMessage = null
+                try {
+                    (mealRepository as? com.fitcal.shared.data.SupabaseMealRepository)?.pullRemote(selectedDateKey)
+                    (userRepository as? com.fitcal.shared.data.SupabaseUserRepository)?.pullRemote(selectedDateKey)
+                    userProfile = userRepository.getUserProfile()
+                    syncEngine.flushOutbox()
+                    ScanQuotaManager.syncQuotaFromServer(selectedDateKey)
+                } catch (_: Throwable) {
+                    // Sync retries on the next launch; the sign-in itself succeeded.
+                }
+                scansRemainingToday = ScanQuotaManager.getRemainingScans(selectedDateKey)
             }
 
             // ── Primary boot: retry ensureSignedIn up to 3 times before declaring OfflineMode ─
@@ -232,7 +293,7 @@ fun App() {
                             )
                         }
                     )
-                    userEmail = authService.getCurrentUserEmail()
+                    userEmail = accountEmailOrNull()
                     ScanQuotaManager.remoteQuotaManager = quotaManager
                     ScanQuotaManager.syncQuotaFromServer(selectedDateKey)
                     scansRemainingToday = ScanQuotaManager.getRemainingScans(selectedDateKey)
@@ -403,7 +464,12 @@ fun App() {
                         onBonusScansEarned = {
                             ScanQuotaManager.addBonusScansSuspend(selectedDateKey, 2)
                             scansRemainingToday = ScanQuotaManager.getRemainingScans(selectedDateKey)
-                        }
+                        },
+                        onCreateAccount = if (userEmail == null) {
+                            { navController.navigate(AuthDestination) }
+                        } else {
+                            null
+                        },
                     )
                 }
 
@@ -429,6 +495,7 @@ fun App() {
                                 timestamp = getCurrentTimeString(),
                                 date = selectedDateKey
                             )
+                            totalMealsLogged += 1
                             coroutineScope.launch {
                                 mealRepository.saveMeal(newMeal)
                             }
@@ -438,7 +505,21 @@ fun App() {
                             navController.navigate(CameraDestination) {
                                 popUpTo(DashboardDestination)
                             }
-                        }
+                        },
+                        shouldSuggestSignIn = {
+                            SignInPromptPolicy.shouldPromptAfterMealLogged(
+                                isPermanentUser = userEmail != null,
+                                totalMealsLogged = totalMealsLogged,
+                            )
+                        },
+                        onSignInSuggestionShown = { SignInPromptPolicy.recordShown() },
+                        onSignInSuggestionDismissed = { SignInPromptPolicy.recordDismissed() },
+                        onCreateAccount = {
+                            lastCapturedImageBytes = null
+                            navController.navigate(AuthDestination) {
+                                popUpTo(DashboardDestination)
+                            }
+                        },
                     )
                 }
 
@@ -463,11 +544,25 @@ fun App() {
                         onNavigateToAuth = {
                             navController.navigate(AuthDestination)
                         },
+                        signOutMessage = signOutMessage,
+                        signingOut = signingOut,
                         onSignOut = {
                             coroutineScope.launch {
-                                authService.signOut()
-                                userEmail = authService.getCurrentUserEmail()
-                                authReady = true
+                                signingOut = true
+                                signOutMessage = null
+                                if (accountData.syncAndCountPending() > 0) {
+                                    signOutMessage = "Some changes haven't synced yet. Connect to the internet and try again so nothing is lost."
+                                } else {
+                                    accountData.clearLocalData()
+                                    authService.signOut()
+                                    userEmail = accountEmailOrNull()
+                                    userProfile = userRepository.getUserProfile()
+                                    totalMealsLogged = 0
+                                    ScanQuotaManager.syncQuotaFromServer(selectedDateKey)
+                                    scansRemainingToday = ScanQuotaManager.getRemainingScans(selectedDateKey)
+                                    authReady = true
+                                }
+                                signingOut = false
                             }
                         },
                         onSave = { updated ->
@@ -486,6 +581,7 @@ fun App() {
                             coroutineScope.launch {
                                 val confirmed = apiClient.deleteAccount()
                                 if (confirmed) {
+                                    accountData.clearLocalData()
                                     PrivacyConsent.clearAll()
                                     AgeGate.reset()
                                     privacyAccepted = false
@@ -525,36 +621,91 @@ fun App() {
                 }
 
                 composable<AuthDestination> {
-                    AuthScreen(
-                        onSignIn = { email, pass ->
-                            authService.signInWithEmail(email, pass)
-                            userEmail = authService.getCurrentUserEmail() ?: email
-                            authReady = true
-                            try {
-                                syncEngine.flushOutbox()
-                                (mealRepository as? com.fitcal.shared.data.SupabaseMealRepository)?.pullRemote(selectedDateKey)
-                            } catch (_: Throwable) {
-                                // Non-fatal sync error
+                    var socialInProgress by remember { mutableStateOf(false) }
+                    var socialError by remember { mutableStateOf<String?>(null) }
+
+                    fun finish() {
+                        authReady = true
+                        navController.popBackStack()
+                    }
+
+                    val onIdToken = remember {
+                        object : IdTokenCallback {
+                            override suspend fun invoke(composeAuth: ComposeAuth, result: IdTokenCallback.Result) {
+                                switchAccount {
+                                    authService.signInWithIdToken(result.provider, result.idToken, result.nonce)
+                                }
                             }
-                            navController.popBackStack()
-                        },
-                        onSignUp = { email, pass ->
-                            authService.signUpWithEmail(email, pass)
-                            userEmail = authService.getCurrentUserEmail() ?: email
-                            authReady = true
-                            try {
-                                syncEngine.flushOutbox()
-                            } catch (_: Throwable) {
-                                // Non-fatal sync error
-                            }
-                            navController.popBackStack()
-                        },
-                        onContinueAsGuest = {
-                            navController.popBackStack()
-                        },
-                        onBack = {
-                            navController.popBackStack()
                         }
+                    }
+                    val onNativeResult: (NativeSignInResult) -> Unit = { result ->
+                        socialInProgress = false
+                        when (result) {
+                            is NativeSignInResult.Success -> finish()
+                            is NativeSignInResult.ClosedByUser -> Unit
+                            is NativeSignInResult.NetworkError -> socialError = AuthMessages.NETWORK
+                            is NativeSignInResult.Error ->
+                                socialError = result.exception?.let { AuthMessages.forError(it) } ?: AuthMessages.GENERIC
+                        }
+                    }
+                    val googleSignIn = supabaseClient.composeAuth.rememberSignInWithGoogle(
+                        onResult = onNativeResult,
+                        onIdToken = onIdToken,
+                        fallback = {
+                            socialInProgress = false
+                            socialError = "Google sign-in isn't available on this device. Use email instead."
+                        },
+                    )
+                    val appleSignIn = supabaseClient.composeAuth.rememberSignInWithApple(
+                        onResult = onNativeResult,
+                        onIdToken = onIdToken,
+                        fallback = {
+                            socialInProgress = false
+                            socialError = AuthMessages.METHOD_UNAVAILABLE
+                        },
+                    )
+
+                    AuthScreen(
+                        actions = AuthActions(
+                            signIn = { email, password ->
+                                switchAccount { authService.signInWithEmail(email, password) }
+                                finish()
+                            },
+                            startSignUp = { email, password ->
+                                val start = authService.startEmailSignUp(email, password)
+                                if (start == EmailSignUpStart.Completed) {
+                                    switchAccount {}
+                                    finish()
+                                }
+                                start
+                            },
+                            completeSignUp = { email, code, password ->
+                                switchAccount { authService.completeEmailSignUp(email, code, password) }
+                                finish()
+                            },
+                            requestPasswordReset = { email -> authService.requestPasswordReset(email) },
+                            completePasswordReset = { email, code, newPassword ->
+                                switchAccount { authService.completePasswordReset(email, code, newPassword) }
+                                finish()
+                            },
+                        ),
+                        social = SocialSignIn(
+                            showGoogle = isGoogleSignInAvailable,
+                            showApple = isAppleSignInAvailable,
+                            onGoogle = {
+                                socialError = null
+                                socialInProgress = true
+                                googleSignIn.startFlow()
+                            },
+                            onApple = {
+                                socialError = null
+                                socialInProgress = true
+                                appleSignIn.startFlow()
+                            },
+                            inProgress = socialInProgress,
+                            error = socialError,
+                        ),
+                        onClose = { navController.popBackStack() },
                     )
                 }
             }

@@ -41,6 +41,7 @@ import com.fitcal.app.ui.screens.review.components.EditableFoodItem
 import com.fitcal.app.ui.screens.review.components.MacroGridCard
 import com.fitcal.app.ui.screens.review.components.WeightInputPill
 import com.fitcal.app.ui.theme.*
+import com.fitcal.app.ui.screens.auth.SignInSuggestionCard
 import com.fitcal.shared.api.FoodDatabase
 import com.fitcal.shared.api.FoodDbEntry
 import com.fitcal.shared.api.NutritionClient
@@ -54,7 +55,11 @@ fun ResultScreen(
     isMock: Boolean,
     capturedImageBytes: ByteArray?,
     onMealLogged: (String, Int, Float, Float, Float) -> Unit,
-    onLogAgain: () -> Unit
+    onLogAgain: () -> Unit,
+    shouldSuggestSignIn: () -> Boolean = { false },
+    onSignInSuggestionShown: () -> Unit = {},
+    onSignInSuggestionDismissed: () -> Unit = {},
+    onCreateAccount: () -> Unit = {},
 ) {
     val scrollState = rememberScrollState()
 
@@ -715,6 +720,23 @@ fun ResultScreen(
                             color = MutedTextColor,
                             textAlign = TextAlign.Center
                         )
+                        var showSuggestion by remember { mutableStateOf(shouldSuggestSignIn()) }
+                        if (showSuggestion) {
+                            LaunchedEffect(Unit) { onSignInSuggestionShown() }
+                            SignInSuggestionCard(
+                                title = "Keep your meals safe",
+                                body = "Create a free account to back up your history and get +1 free AI scan every day.",
+                                actionLabel = "Create account",
+                                onAction = {
+                                    showSuccessDialog = false
+                                    onCreateAccount()
+                                },
+                                onDismiss = {
+                                    showSuggestion = false
+                                    onSignInSuggestionDismissed()
+                                },
+                            )
+                        }
                         Button(
                             onClick = {
                                 showSuccessDialog = false

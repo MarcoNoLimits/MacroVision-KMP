@@ -88,6 +88,8 @@ class LocalUserRepository(
             _waterIntakeMap.value = _waterIntakeMap.value + (date to amountMl)
             withContext(Dispatchers.Default) {
                 storage.putString(waterKey(date), amountMl.toString())
+                val dates = waterDatesLocked()
+                if (date !in dates) storage.putString(KEY_WATER_DATES, (dates + date).joinToString(","))
             }
         }
     }
@@ -96,9 +98,25 @@ class LocalUserRepository(
         return _waterIntakeMap.map { map -> map[date] ?: (storage.getString(waterKey(date), "0").toIntOrNull() ?: 0) }
     }
 
+    /** Removes the profile and every water entry from this device. */
+    suspend fun clearAll() {
+        mutex.withLock {
+            val dates = waterDatesLocked() + _waterIntakeMap.value.keys
+            dates.forEach { storage.remove(waterKey(it)) }
+            storage.remove(KEY_WATER_DATES)
+            storage.remove(KEY_USER_PROFILE)
+            _waterIntakeMap.value = emptyMap()
+            _profileFlow.value = null
+        }
+    }
+
+    private fun waterDatesLocked(): List<String> =
+        storage.getString(KEY_WATER_DATES, "").split(",").filter { it.isNotBlank() }
+
     private fun waterKey(date: String) = "water_intake_$date"
 
     companion object {
         const val KEY_USER_PROFILE = "user_profile"
+        const val KEY_WATER_DATES = "water_intake_dates"
     }
 }

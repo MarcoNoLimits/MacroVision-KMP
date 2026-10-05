@@ -96,6 +96,24 @@ class LocalMealRepository(
         return _mealsFlow.map { list -> list.filter { it.date == date } }
     }
 
+    /** Gives every meal a fresh ID and returns the re-keyed list. */
+    suspend fun reassignIds(newId: () -> String): List<LoggedMeal> {
+        ensureInitialized()
+        return mutex.withLock {
+            val rekeyed = _mealsFlow.value.map { it.copy(id = newId()) }
+            persistLocked(rekeyed)
+            rekeyed
+        }
+    }
+
+    suspend fun clearAll() {
+        mutex.withLock {
+            _mealsFlow.value = emptyList()
+            isInitialized = true
+            storage.remove(KEY_LOGGED_MEALS)
+        }
+    }
+
     companion object {
         const val KEY_LOGGED_MEALS = "logged_meals"
     }

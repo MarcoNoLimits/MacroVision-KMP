@@ -44,8 +44,9 @@ kotlin {
             implementation(libs.coil.network.ktor)
             
             implementation(libs.ktor.serialization.kotlinx.json)
+            implementation(libs.supabase.compose.auth)
         }
-        
+
         commonTest.dependencies {
             implementation(kotlin("test"))
         }
@@ -137,6 +138,10 @@ configure<com.android.build.api.dsl.ApplicationExtension> {
         buildConfigField("String", "GATEWAY_URL", "\"$gatewayUrl\"")
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
+
+        // Optional: Google sign-in is hidden until the OAuth web client ID is configured.
+        val googleWebClientId = properties.getProperty("GOOGLE_WEB_CLIENT_ID") ?: ""
+        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")
     }
 
     

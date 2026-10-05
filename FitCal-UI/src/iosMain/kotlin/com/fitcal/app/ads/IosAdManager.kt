@@ -23,15 +23,14 @@ class IosAdManager : AdManager {
         if (handler != null) {
             handler(onRewarded, onDismissed)
         } else {
-            // Fallback: grant reward for testing if no ad SDK attached
-            onRewarded()
+            // No ad SDK attached: a reward must be earned by watching an ad, so grant nothing.
             onDismissed()
         }
     }
 
     override fun isInterstitialReady(): Boolean = isInterstitialReadyChecker?.invoke() ?: true
 
-    override fun isRewardedReady(): Boolean = isRewardedReadyChecker?.invoke() ?: true
+    override fun isRewardedReady(): Boolean = isRewardedReadyChecker?.invoke() ?: false
 
     override fun preloadAds() {
         onPreloadHandler?.invoke()

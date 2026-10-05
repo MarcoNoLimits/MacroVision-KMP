@@ -22,6 +22,12 @@ actual val gatewayUrl: String get() = BuildConfig.GATEWAY_URL
 actual val supabaseUrl: String get() = BuildConfig.SUPABASE_URL
 actual val supabaseAnonKey: String get() = BuildConfig.SUPABASE_ANON_KEY
 actual val isDebugBuild: Boolean get() = BuildConfig.DEBUG
+actual val googleWebClientId: String get() = BuildConfig.GOOGLE_WEB_CLIENT_ID
+actual val isGoogleSignInAvailable: Boolean get() = googleWebClientId.isNotBlank()
+actual val isAppleSignInAvailable: Boolean get() = false
+
+actual fun createSecureStringStore(): com.fitcal.shared.auth.SecureStringStore? =
+    com.fitcal.app.auth.KeystoreStringStore(appContext)
 
 lateinit var appContext: Context
 

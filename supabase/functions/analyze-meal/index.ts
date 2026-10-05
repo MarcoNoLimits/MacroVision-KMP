@@ -5,9 +5,9 @@
  * Routes: POST /v1/analyze-meal · POST /v1/recalculate · GET /v1/entitlements
  *         POST /v1/webhook/revenuecat · GET /health
  *
- * Auth: Supabase Edge Functions validate the Supabase JWT automatically when
- *       verify_jwt = true (the default). The user's sub is available via the
- *       Authorization header decoded by the Supabase runtime.
+ * Auth: deployed with verify_jwt = false so the RevenueCat webhook (which carries no
+ *       Supabase JWT) can reach it. Every other /v1 route verifies the bearer token
+ *       with Supabase Auth itself; anonymous sign-ins are real users and pass.
  *
  * Secrets (set via `supabase secrets set KEY=value`):
  *   GEMINI_API_KEY, OPENROUTER_API_KEY, GROQ_API_KEY
@@ -43,7 +43,10 @@ interface NutritionResponse {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const MAX_DAILY_ALLOWANCE = 5;
+// Free scans per day. Computed here from server facts only; the client's value is ignored.
+const BASE_DAILY_ALLOWANCE = 3;
+const WEEK_ONE_DAILY_ALLOWANCE = 5;
+const ACCOUNT_BONUS = 1;
 
 const SYSTEM_PROMPT = `You are a professional nutritionist. Analyze the food in this image.
 Return ONLY a valid JSON object — no prose, no markdown fences, no explanation.
@@ -70,8 +73,9 @@ Use this exact structure:
   "estimation_notes": "string"
 }`;
 
+// No Access-Control-Allow-Origin: the native app sends no Origin, and browsers must
+// not be able to read responses made with a user's token.
 const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, x-device-id, apikey",
 };
@@ -272,9 +276,16 @@ function devMockResponse(): NutritionResponse {
 
 // ─── Quota (server-side, service_role) ────────────────────────────────────────
 
+// Permanent = a real account the user can sign back into: a confirmed email or a linked OAuth identity.
+function isPermanentAccount(user: any): boolean {
+  if (!user || user.is_anonymous) return false;
+  if (user.email_confirmed_at) return true;
+  return (user.identities ?? []).some((i: any) => i.provider && i.provider !== "email");
+}
+
 async function checkQuotaServerSide(
   userId: string,
-  allowance: number
+  accountBonus: number
 ): Promise<{ allowed: boolean; effectiveAllowance: number }> {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -288,32 +299,21 @@ async function checkQuotaServerSide(
       apikey: serviceRole,
       Authorization: `Bearer ${serviceRole}`,
     },
-    body: JSON.stringify({ p_user_id: userId, p_allowance: allowance }),
+    body: JSON.stringify({ p_user_id: userId, p_allowance: BASE_DAILY_ALLOWANCE }),
   });
   if (!resp.ok) throw new Error(`get_scan_quota RPC failed (${resp.status}): ${await resp.text()}`);
   const data: any = await resp.json();
-  if (typeof data === "boolean") {
-    return { allowed: data, effectiveAllowance: allowance };
-  }
 
-  let effectiveAllowance = allowance;
+  let weekOne = false;
   if (data && typeof data.first_install_date === "string") {
     const installMs = Date.parse(data.first_install_date);
-    if (!Number.isNaN(installMs) && Date.now() - installMs < 7 * 86400 * 1000) {
-      effectiveAllowance = Math.max(allowance, MAX_DAILY_ALLOWANCE);
-    }
+    weekOne = !Number.isNaN(installMs) && Date.now() - installMs < 7 * 86400 * 1000;
   }
+  const effectiveAllowance = (weekOne ? WEEK_ONE_DAILY_ALLOWANCE : BASE_DAILY_ALLOWANCE) + accountBonus;
 
   const used = typeof data?.used === "number" ? data.used : 0;
   const bonus = typeof data?.bonus === "number" ? data.bonus : 0;
-  const remaining =
-    typeof data?.used === "number"
-      ? Math.max(0, effectiveAllowance + bonus - used)
-      : typeof data?.remaining === "number"
-      ? data.remaining
-      : effectiveAllowance;
-
-  return { allowed: remaining > 0, effectiveAllowance };
+  return { allowed: effectiveAllowance + bonus - used > 0, effectiveAllowance };
 }
 
 async function consumeScanServerSide(userId: string, allowance: number): Promise<boolean> {
@@ -359,6 +359,12 @@ async function verifyRevenueCatSignature(request: Request, body: string, secret:
 
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
+const supabaseAdmin = createClient(
+  Deno.env.get("SUPABASE_URL")!,
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+  { auth: { persistSession: false, autoRefreshToken: false } }
+);
+
 Deno.serve(async (req: Request) => {
   const url = new URL(req.url);
 
@@ -372,7 +378,7 @@ Deno.serve(async (req: Request) => {
 
   // Health (unauthenticated)
   if (url.pathname.endsWith("/health") || url.pathname === "/") {
-    return jsonResponse({ status: "healthy", service: "fitcal-gateway", runtime: "supabase-edge", env: Deno.env.get("FITCAL_ENV") || Deno.env.get("FITTER_ENV") || "production" }, 200);
+    return jsonResponse({ status: "healthy" }, 200);
   }
 
   // ── RevenueCat webhook (uses webhook secret, not user JWT) ────────────────
@@ -380,9 +386,14 @@ Deno.serve(async (req: Request) => {
     try {
       const body = await req.text();
       const secret = Deno.env.get("REVENUECAT_WEBHOOK_SECRET");
-      if (secret) {
-        const valid = await verifyRevenueCatSignature(req, body, secret);
-        if (!valid) return jsonResponse({ error: "Unauthorized", message: "Invalid webhook signature" }, 401);
+      const isDev = (Deno.env.get("FITCAL_ENV") || Deno.env.get("FITTER_ENV")) === "dev";
+      if (!secret) {
+        if (!isDev) {
+          console.error("REVENUECAT_WEBHOOK_SECRET not set — rejecting webhook");
+          return jsonResponse({ error: "Service Unavailable", message: "Webhook not configured" }, 503);
+        }
+      } else if (!(await verifyRevenueCatSignature(req, body, secret))) {
+        return jsonResponse({ error: "Unauthorized", message: "Invalid webhook signature" }, 401);
       }
       const event = (JSON.parse(body) as any).event || {};
       const appUserId = event.app_user_id || event.original_app_user_id;
@@ -413,48 +424,26 @@ Deno.serve(async (req: Request) => {
 
       return jsonResponse({ status: "received", processed: Boolean(appUserId) }, 200);
     } catch (e: any) {
-      return jsonResponse({ error: e.message }, 400);
+      console.error("RevenueCat webhook error:", e.message);
+      return jsonResponse({ error: "Bad Request" }, 400);
     }
   }
 
-  // ── All /v1/... endpoints require a valid Supabase JWT ────────────────────
-  // The runtime validates the JWT automatically; we just need to extract the user_id.
+  // ── All other /v1/... endpoints require a verified user session ───────────
+  // getUser() checks the token with Supabase Auth. The public anon key has no user
+  // and is rejected; anonymous sign-ins are real users and are accepted.
   const authHeader = req.headers.get("Authorization") || "";
-  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+  if (!token) return err401();
 
-  let userId: string | null = null;
-
-  if (token) {
-    // Decode the JWT payload (trust the runtime's signature validation)
-    try {
-      const parts = token.split(".");
-      if (parts.length === 3) {
-        const payloadB64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-        const padded = payloadB64.padEnd(payloadB64.length + ((4 - (payloadB64.length % 4)) % 4), "=");
-        const payload = JSON.parse(atob(padded));
-
-        // Reject expired tokens
-        const now = Math.floor(Date.now() / 1000);
-        if (typeof payload.exp === "number" && payload.exp <= now) {
-          return err401("JWT has expired");
-        }
-
-        userId = payload.sub || payload.user_id || null;
-      }
-    } catch {
-      return err401("Malformed JWT");
-    }
-  }
-
-  // No token → use device-id as anonymous identifier for rate limiting
-  const deviceId = req.headers.get("x-device-id") || "unknown-device";
-  const effectiveId = userId ?? `device:${deviceId}`;
+  const { data: authData, error: authError } = await supabaseAdmin.auth.getUser(token);
+  if (authError || !authData?.user) return err401("Invalid or expired session");
+  const userId = authData.user.id;
+  const accountBonus = isPermanentAccount(authData.user) ? ACCOUNT_BONUS : 0;
 
   try {
     // ── GET /v1/entitlements ────────────────────────────────────────────────
     if (req.method === "GET" && url.pathname.endsWith("/v1/entitlements")) {
-      if (!userId) return jsonResponse({ premium: false, user_id: null }, 200);
-      // Check entitlement from DB
       const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
       const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
       const entResp = await fetch(
@@ -472,32 +461,26 @@ Deno.serve(async (req: Request) => {
       const imageBase64 = body.image_base64 || body.imageBase64;
       const plateSizeInches = body.plate_size_inches || body.plateSizeInches;
       const requestedModel = body.model_hint || body.model;
-      const clientAllowance = typeof body.daily_allowance === "number"
-        ? Math.min(Math.max(1, body.daily_allowance), MAX_DAILY_ALLOWANCE)
-        : 3;
 
       if (!imageBase64 || typeof imageBase64 !== "string") {
         return jsonResponse({ error: "Bad Request", message: "image_base64 is required" }, 400);
       }
 
       // Premium check — skip quota for premium users
-      let isPremium = false;
-      if (userId) {
-        const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-        const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-        const entResp = await fetch(
-          `${supabaseUrl}/rest/v1/entitlements?user_id=eq.${userId}&entitlement_id=in.(fitcal_premium,fitter_premium)&select=status`,
-          { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } }
-        );
-        const entData: any[] = entResp.ok ? await entResp.json() : [];
-        isPremium = entData.some((e) => e.status === "active");
-      }
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      const entResp = await fetch(
+        `${supabaseUrl}/rest/v1/entitlements?user_id=eq.${userId}&entitlement_id=in.(fitcal_premium,fitter_premium)&select=status`,
+        { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } }
+      );
+      const entData: any[] = entResp.ok ? await entResp.json() : [];
+      const isPremium = entData.some((e) => e.status === "active");
 
       // Quota pre-check BEFORE VLM spend (does not consume quota if VLM fails)
-      let effectiveAllowance = clientAllowance;
-      if (!isPremium && userId) {
+      let effectiveAllowance = BASE_DAILY_ALLOWANCE + accountBonus;
+      if (!isPremium) {
         try {
-          const quotaCheck = await checkQuotaServerSide(userId, clientAllowance);
+          const quotaCheck = await checkQuotaServerSide(userId, accountBonus);
           effectiveAllowance = quotaCheck.effectiveAllowance;
           if (!quotaCheck.allowed) return err402Quota();
         } catch (quotaErr: any) {
@@ -505,7 +488,6 @@ Deno.serve(async (req: Request) => {
           return jsonResponse({ error: "Service temporarily unavailable", message: "Could not verify quota. Try again." }, 503);
         }
       }
-      // Unauthenticated (no userId) → allow scan, rate-limited only by provider
 
       let userPrompt = "What is in this meal? Please estimate its nutritional contents.";
       if (plateSizeInches) userPrompt += `\nNOTE: The user's plate size is exactly ${plateSizeInches} inches. Calibrate portion sizes accordingly.`;
@@ -513,12 +495,12 @@ Deno.serve(async (req: Request) => {
       // Simple in-memory semantic cache key (no KV in Edge Functions free tier)
       // For production caching, add a Supabase table or Redis via Upstash.
       const semanticHash = await sha256(`analyze:${userPrompt}:${imageBase64.substring(0, 10000)}:${imageBase64.length}`);
-      console.log(`[analyze-meal] user=${effectiveId} hash=${semanticHash} allowance=${effectiveAllowance}`);
+      console.log(`[analyze-meal] user=${userId} hash=${semanticHash} allowance=${effectiveAllowance}`);
 
       const { result, provider } = await executeVlmFailover(userPrompt, imageBase64, requestedModel);
 
       // Consume 1 scan quota ONLY after VLM inference succeeded
-      if (!isPremium && userId) {
+      if (!isPremium) {
         try {
           await consumeScanServerSide(userId, effectiveAllowance);
         } catch (consumeErr: any) {
@@ -544,7 +526,7 @@ Deno.serve(async (req: Request) => {
         .join("\n");
       const prompt = `Analyze these food items and estimate their nutritional contents based on the given weights.\nItems:\n${itemsPrompt}`;
 
-      console.log(`[recalculate] user=${effectiveId}`);
+      console.log(`[recalculate] user=${userId}`);
       const { result, provider } = await executeVlmFailover(prompt);
       return new Response(JSON.stringify(result), {
         status: 200,
@@ -555,6 +537,6 @@ Deno.serve(async (req: Request) => {
     return jsonResponse({ error: "Not Found" }, 404);
   } catch (error: any) {
     console.error("Edge Function error:", error);
-    return jsonResponse({ error: "Internal Server Error", message: error.message || "Unexpected error" }, 500);
+    return jsonResponse({ error: "Internal Server Error", message: "Analysis failed. Please try again." }, 500);
   }
 });

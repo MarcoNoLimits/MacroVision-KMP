@@ -45,6 +45,8 @@ fun SettingsScreen(
     userEmail: String? = null,
     onNavigateToAuth: () -> Unit = {},
     onSignOut: () -> Unit = {},
+    signOutMessage: String? = null,
+    signingOut: Boolean = false,
     onSave: (UserProfile) -> Unit,
     onBack: () -> Unit,
     onDeleteAllData: (() -> Unit)? = null,
@@ -74,6 +76,7 @@ fun SettingsScreen(
     // GDPR Art. 7(3) — consent must be as easy to withdraw as to give.
     var personalizedAds by remember { mutableStateOf(PrivacyConsent.isAdsPersonalizationEnabled()) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showSignOutConfirm by remember { mutableStateOf(false) }
 
     var isError by remember { mutableStateOf(false) }
 
@@ -173,7 +176,7 @@ fun SettingsScreen(
                             color = TextColor
                         )
                         Text(
-                            text = "Using FitCal as a guest. Sign in with email to back up and sync your meals and goals across devices — login is optional.",
+                            text = "You're using FitCal as a guest. Create a free account to back up your meals, sync across devices and get +1 free AI scan every day. Everything you've logged comes with you.",
                             style = BrandTypography.BodySmall,
                             color = TextColor
                         )
@@ -189,7 +192,7 @@ fun SettingsScreen(
                             .shadow(2.dp, RoundedCornerShape(RadiusM))
                     ) {
                         Text(
-                            text = "Sign In / Create Account",
+                            text = "Create Free Account / Sign In",
                             style = BrandTypography.CardTitle,
                             color = Color.White
                         )
@@ -207,14 +210,15 @@ fun SettingsScreen(
                             color = TextColor
                         )
                         Text(
-                            text = "Cloud sync active across devices.",
+                            text = "Cloud sync active across devices · +1 free scan every day.",
                             style = BrandTypography.BodySmall,
                             color = TextColor
                         )
                     }
 
                     OutlinedButton(
-                        onClick = onSignOut,
+                        onClick = { showSignOutConfirm = true },
+                        enabled = !signingOut,
                         shape = RoundedCornerShape(RadiusM),
                         border = BorderStroke(1.dp, BorderColor),
                         modifier = Modifier
@@ -222,9 +226,16 @@ fun SettingsScreen(
                             .heightIn(min = 48.dp)
                     ) {
                         Text(
-                            text = "Sign Out",
+                            text = if (signingOut) "Signing out…" else "Sign Out",
                             style = BrandTypography.CardTitle,
                             color = TextColor
+                        )
+                    }
+                    if (signOutMessage != null) {
+                        Text(
+                            text = signOutMessage,
+                            style = BrandTypography.BodySmall,
+                            color = DangerTextStrong
                         )
                     }
                 }
@@ -917,6 +928,34 @@ fun SettingsScreen(
             )
         }
     }
+    }
+
+    if (showSignOutConfirm) {
+        AlertDialog(
+            onDismissRequest = { showSignOutConfirm = false },
+            title = { Text("Sign out?", style = BrandTypography.SectionTitle, color = TextColor) },
+            text = {
+                Text(
+                    "Your meals stay safe in your account. They'll be removed from this device until you sign in again.",
+                    style = BrandTypography.Body,
+                    color = TextColor
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showSignOutConfirm = false
+                    onSignOut()
+                }) {
+                    Text("Sign out", color = DangerColor, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSignOutConfirm = false }) {
+                    Text("Cancel", color = TextColor)
+                }
+            },
+            containerColor = CardBackground
+        )
     }
 
     if (showDeleteConfirm && onDeleteAllData != null) {
