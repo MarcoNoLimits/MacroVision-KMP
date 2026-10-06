@@ -2,7 +2,6 @@
 
 import com.fitcal.app.ads.AdConfig
 import com.fitcal.app.ads.AdManager
-import com.fitcal.app.ads.AppOpenAdManager
 import com.fitcal.app.ads.ScanQuotaManager
 import com.fitcal.shared.api.FoodDatabase
 import com.fitcal.shared.data.KeyValueStorage
@@ -94,14 +93,6 @@ class E2EJourneyTest {
         }
         ScanQuotaManager.currentTimeMillisProvider = { simulatedTimeMillis }
 
-        AppOpenAdManager.preferenceReader = { key, default ->
-            memoryStore[key] ?: default
-        }
-        AppOpenAdManager.preferenceWriter = { key, value ->
-            memoryStore[key] = value
-        }
-        AppOpenAdManager.currentTimeMillisProvider = { simulatedTimeMillis }
-
         com.fitcal.app.telemetry.AdTelemetryManager.preferenceReader = { key, default ->
             memoryStore[key] ?: default
         }
@@ -114,7 +105,6 @@ class E2EJourneyTest {
     @AfterTest
     fun tearDown() {
         ScanQuotaManager.resetToDefaults()
-        AppOpenAdManager.resetToDefaults()
         com.fitcal.app.telemetry.AdTelemetryManager.resetForTesting()
         memoryStore.clear()
     }
@@ -133,9 +123,6 @@ class E2EJourneyTest {
     fun testJourney1_FreshInstallOnboarding_WeekOneAllowance_ScanSixForcedInterstitial_PersistMeal() = runBlocking {
         // 1. Fresh install Onboarding
         assertTrue(memoryStore.isEmpty(), "Preferences must be initially empty on fresh install")
-        val sessionCount = AppOpenAdManager.incrementSessionCount()
-        assertEquals(1, sessionCount)
-        assertFalse(AppOpenAdManager.canShowAppOpenAd(), "Grace period must suppress App Open Ad on first session")
 
         val installTimestamp = ScanQuotaManager.getFirstInstallTimestamp()
         assertEquals(simulatedTimeMillis, installTimestamp)

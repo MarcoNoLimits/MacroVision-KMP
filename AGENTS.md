@@ -9,8 +9,10 @@ This file is the authoritative instruction set for any agent (AI or human) worki
 **FitCal** is a Kotlin Multiplatform (KMP) app that scans meal photos with a Vision-Language Model (VLM) and estimates ingredients, weights, and macronutrients with an interactive correction workflow.
 
 - **Modules**: `:shared` (HTTP clients, models, VLM logic), `:FitCal-UI` (Compose Multiplatform UI + ads + quotas), `iosApp/` (native iOS wrapper).
-- **VLM Pipeline**: OpenRouter (Qwen2.5-VL) → Google Gemini → Groq failover.
-- **Monetization state**: Google AdMob integrated (test IDs in `AdConfig`), daily scan quota system live (`ScanQuotaManager`).
+- **Release scope**: **Android only for v1.** iOS code stays in the repo but is not a release target.
+- **Backend**: Supabase (Postgres + RLS, Auth). The only AI gateway is the Edge Function `supabase/functions/analyze-meal`; it holds the paid provider keys. (The old Cloudflare Worker was removed.)
+- **VLM Pipeline** (inside the gateway): Gemini → OpenRouter (Qwen VL) → Groq (`qwen/qwen3.8-27b`) failover.
+- **Monetization state**: Google AdMob only (banners, forced interstitial at quota, rewarded); test IDs in debug builds. Daily scan quota system live (`ScanQuotaManager`).
 
 ## 2. Non-Negotiable Rules
 
@@ -22,12 +24,12 @@ This file is the authoritative instruction set for any agent (AI or human) worki
 ## 3. Existing Features (Do Not Regress)
 
 - Camera capture + on-device image optimization (resize/compress before upload)
-- VLM failover sequencing (OpenRouter → Gemini → Groq)
+- VLM failover sequencing in the gateway (Gemini → OpenRouter → Groq)
 - Interactive corrections & local recalculation (~10x faster than re-upload)
 - Local food database grounding + Search-to-Swap overlay
 - Daily scan quota (`ScanQuotaManager`): currently 3 free scans/day, +2 bonus scans per rewarded ad, +1 free scan/day for permanent accounts (see 5.1)
 - Sign-in is optional and never blocks scanning: guests are anonymous Supabase users; creating an account upgrades the same user in place (`SupabaseAuthService`)
-- Ad layer: `AdManager` interface + `AndroidAdManager` (AdMob test units)
+- Ad layer: `AdManager` interface + `AndroidAdManager` (AdMob; test units in debug builds)
 
 ## 4. Task List
 
@@ -35,12 +37,12 @@ This file is the authoritative instruction set for any agent (AI or human) worki
 |---|------|--------|-------|
 | 1 | Onboarding scan policy (Week 1 vs Week 2+) | **DONE** | Implemented 5 vs 3 in `ScanQuotaManager` |
 | 2 | Forced interstitial on scan #4+ | **DONE** | Scan never blocked; routes to `showScanProcessingAd` |
-| 3 | Re-integrate AdMob test units → live AppLovin MAX + AdMob bidding | **DONE** | Configured in `AdConfig` with MAX SDK & placement keys |
-| 4 | App Open Ads with grace period + cooldown | **DONE** | `AppOpenAdManager` (session > 3, 4h cooldown) |
+| 3 | AppLovin MAX mediation | **REMOVED** | Owner decision 2026-10-07: AdMob only for launch; MAX was never configured |
+| 4 | App Open Ads | **REMOVED** | Owner decision 2026-10-07: dropped for launch (retention over low-value impressions) |
 | 5 | Adaptive banners on secondary tabs only | **DONE** | Isolated to Dashboard & Settings; zero ads on Camera/Review |
 | 6 | Brand-safety ad filtering | **DONE** | Codified blocked/allowed categories in `AdConfig` |
 | 7 | Keep `ScanQuotaManagerTest` green (expanded to 9 tests) | **DONE** | 9/9 passing |
-| 8 | Production Architecture: Secure Serverless Gateway | **DONE** | Edge proxy (Cloudflare Worker), KV semantic cache, rate limit, kill switch, API key isolation |
+| 8 | Production Architecture: Secure Serverless Gateway | **DONE** | Supabase Edge Function `analyze-meal`: verified JWT on every call, server-side quota and allowance, kill switch, API key isolation |
 | 9 | Commercial VLM Provider Migration (Pay-As-You-Go) | **DONE** | Gemini 2.0 Flash primary with x-goog-api-key header isolation, Qwen/Groq automated edge failover |
 | 10 | FitCal Premium Subscription Paywall (RevenueCat) | **DONE** | $4.99/mo & $39.99/yr plans, entitlement gates ad flow + grants unlimited scans |
 
@@ -74,18 +76,15 @@ When the user has exhausted their free daily quota and attempts another scan:
 4. **Policy compliance**: forced ads must be **Interstitials**, NEVER Rewarded (Rewarded requires explicit user opt-in click).
 5. Bonus: the ad plays during the "analysis wait" — UX stays smooth.
 
-### 5.3 Unified Ad Mediation: AppLovin MAX + AdMob Bidding (Task 3)
+### 5.3 Ad Network (Task 3)
 
-- Keep Google AdMob demand, but run it **inside AppLovin MAX** as a real-time bidder.
-- Add bidding adapters: **Meta Audience Network, Unity Ads, Mintegral** (playable-format demand).
-- Why: MAX unified bidding lifts eCPM 30–40% vs. single-network AdMob; playable/interactive creatives earn the highest eCPMs ($35–$90 Tier 1).
-- Replace `ANDROID_TEST_*` / `IOS_TEST_*` IDs with live production units (keep test IDs in debug builds).
+- **Google AdMob only** for launch (owner decision 2026-10-07). AppLovin MAX mediation was removed; revisit only once there is real traffic and a MAX account.
+- Production ad unit IDs are in `AdConfig`; debug builds always use Google's test IDs.
+- Ad revenue telemetry comes from AdMob `OnPaidEventListener` → `AdTelemetryManager.trackAdRevenue`.
 
 ### 5.4 App Open Ads (Task 4)
 
-- Show App Open ad **only when**: `sessionCount > 3` AND `timeSinceLastAppOpenAd >= 4 hours`.
-- No App Open ad during sessions 1–3 (grace period). Frequency cap: 1 per 24h.
-- Store `sessionCount` and `lastAppOpenAdTimestamp` in preferences.
+- **Removed for launch** (owner decision 2026-10-07). Do not reintroduce without the owner's approval.
 
 ### 5.5 Banner Ads (Task 5)
 
@@ -103,7 +102,7 @@ When the user has exhausted their free daily quota and attempts another scan:
 
 1. **Zero Client-Side Secrets**: Never embed paid commercial API keys (Gemini, Vertex AI, OpenRouter) inside the mobile client or `BuildConfig`.
 2. **Edge Proxy Routing**:
-   - `Mobile App (KMP) -> HTTPS POST /v1/analyze-meal -> Edge Gateway (Cloudflare Worker / Firebase) -> Commercial VLM API`.
+   - `Mobile App (KMP) -> HTTPS POST /v1/analyze-meal -> Supabase Edge Function (analyze-meal) -> Commercial VLM API`.
    - Protects against key scraping via APK decompilation (`jadx`) or network interception (`mitmproxy`).
 3. **Abuse Prevention & Device Integrity**:
    - Verify requests with device attestation (Firebase App Check, Google Play Integrity, or Apple App Attest).
@@ -119,7 +118,7 @@ When the user has exhausted their free daily quota and attempts another scan:
    - **Primary VLM**: **Gemini 2.0 Flash** (lowest cost at ~$0.00017/scan, native 768px spatial plate grounding, <800ms latency, high gross margin).
    - **Secondary Failover**: **Qwen2.5-VL-72B** (via OpenRouter/Fireworks) as an automated edge fallback if Google has an outage.
 2. **Gateway Deployment**:
-   - Deploy a lightweight TypeScript Cloudflare Worker (100k free req/day) or Firebase Cloud Function with App Check.
+   - The gateway is the Supabase Edge Function `analyze-meal` (deployed with `verify_jwt = false`; it verifies tokens itself so the RevenueCat webhook can reach it).
 3. **Subscription Engine (Task 10)**:
    - Integrate **RevenueCat** for FitCal Premium ($4.99/mo or $39.99/yr) offering ad-free unlimited scans, macro export, and personalized calorie planning.
 
@@ -128,7 +127,7 @@ When the user has exhausted their free daily quota and attempts another scan:
 - [x] All 5 `ScanQuotaManagerTest` tests pass, plus new tests for: Week-1 limit (5), Week-2 limit (3), forced-interstitial trigger on scan #4+ (no dialog).
 - [x] `App.kt` gate logic routes: quota available → process; quota exhausted → `showScanProcessingAd { process }`.
 - [x] No ad units on Camera/Scan composable.
-- [x] App Open ad respects `sessionCount > 3` + 4h cooldown.
+- [x] ~~App Open ad respects `sessionCount > 3` + 4h cooldown.~~ (App Open ads removed 2026-10-07)
 - [x] Deploy secure serverless gateway proxy (Task 8).
 - [x] Upgrade VLM pipeline to Vertex AI / Gemini 2.0 Flash Pay-As-You-Go with zero data retention (Task 9).
 - [x] Integrate RevenueCat subscription paywall for FitCal Premium (Task 10).

@@ -67,9 +67,6 @@ kotlin {
             implementation(libs.play.services.ads)
             implementation("com.google.android.ump:user-messaging-platform:3.1.0")
             
-            // AppLovin MAX SDK & Google Bidding Adapter (Task 3: Unified In-App Bidding)
-            implementation("com.applovin:applovin-sdk:13.6.4")
-            implementation("com.applovin.mediation:google-adapter:23.6.0.0")
             
             // Guava for CameraX ListenableFuture resolution with Play Services
             implementation("com.google.guava:guava:33.3.1-android")
@@ -134,7 +131,7 @@ configure<com.android.build.api.dsl.ApplicationExtension> {
             }
         }
 
-        // ZERO paid VLM keys in the APK — all inference routes through the Cloudflare Worker
+        // ZERO paid VLM keys in the APK — all inference routes through the Supabase Edge Function gateway
         buildConfigField("String", "GATEWAY_URL", "\"$gatewayUrl\"")
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")

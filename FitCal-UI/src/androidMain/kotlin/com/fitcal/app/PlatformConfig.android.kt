@@ -116,8 +116,8 @@ actual fun createConsentStorage(): PrivacyConsent.ConsentStorage {
 }
 
 /**
- * Android consent: Google UMP (User Messaging Platform) via the AppLovin CMP
- * bridge, falling back to a non-personalized default when unsupported.
+ * Android consent: Google UMP (User Messaging Platform), whose IAB TCF signal AdMob reads
+ * directly. Any failure resolves to "no personalized ads".
  *
  * IMPORTANT: the caller MUST await this before MobileAds.initialize / ad loads.
  * Initializing first and prompting later is the defect this function exists to prevent.
@@ -146,21 +146,12 @@ actual suspend fun requestPlatformAdConsent(): Boolean = suspendCancellableCorou
                     }
                     val canRequest = consentInformation.canRequestAds()
                     android.util.Log.i("FitCal_Privacy", "UMP consent resolved. canRequestAds=$canRequest")
-                    try {
-                        com.applovin.sdk.AppLovinPrivacySettings.setHasUserConsent(canRequest, activity)
-                    } catch (t: Throwable) {
-                        android.util.Log.w("FitCal_Privacy", "AppLovin consent sync failed: ${t.message}")
-                    }
                     cont.resume(canRequest)
                 }
             },
             { requestError ->
                 android.util.Log.w("FitCal_Privacy", "UMP consent request error: ${requestError.message}")
-                val canRequest = consentInformation.canRequestAds()
-                try {
-                    com.applovin.sdk.AppLovinPrivacySettings.setHasUserConsent(canRequest, activity)
-                } catch (_: Throwable) {}
-                cont.resume(canRequest)
+                cont.resume(consentInformation.canRequestAds())
             }
         )
     } catch (t: Throwable) {

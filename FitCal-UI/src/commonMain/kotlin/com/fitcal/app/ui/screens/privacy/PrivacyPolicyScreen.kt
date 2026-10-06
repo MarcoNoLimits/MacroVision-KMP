@@ -72,7 +72,7 @@ fun PrivacyPolicyScreen(
                 color = MutedTextColor,
             )
             Text(
-                text = "Last updated: February 2026",
+                text = "Last updated: October 2026",
                 fontSize = 12.sp,
                 color = MutedTextColor,
             )
@@ -141,8 +141,9 @@ private fun PrivacyPolicyContent() {
     }
 
     PolicySection("Who processes your data") {
-        "Our servers run on Cloudflare. Photographs are forwarded to third-party AI " +
-            "providers — OpenRouter, Google, and Groq — solely to generate estimates. " +
+        "Our backend runs on Supabase, hosted in the EU (Ireland). Photographs are " +
+            "forwarded to third-party AI providers — OpenRouter, Google, and Groq — solely " +
+            "to generate estimates. " +
             "Account data is stored in Supabase. Payments are handled by RevenueCat and " +
             "the relevant app store; we never see your full card details."
     }
@@ -154,8 +155,7 @@ private fun PrivacyPolicyContent() {
     }
 
     PolicySection("Advertising") {
-        "FitCal is supported by advertising. We use Google AdMob and, where enabled, " +
-            "AppLovin MAX.\n\n" +
+        "FitCal is supported by advertising. We use Google AdMob.\n\n" +
             "**Personalized ads are OFF by default.** If you opt in — and separately " +
             "approve the device-level prompt — our ad partners may use your activity to " +
             "show more relevant ads. You can turn personalized ads off at any time in " +
@@ -201,7 +201,7 @@ private fun PrivacyPolicyContent() {
 private fun TermsContent() {
     PolicySection("Acceptance of terms") {
         "By using FitCal you agree to these terms. If you do not agree, do not use the " +
-            "app. These terms were last updated in February 2026."
+            "app. These terms were last updated in October 2026."
     }
 
     PolicySection("FitCal is not medical advice") {
@@ -237,8 +237,8 @@ private fun TermsContent() {
     }
 
     PolicySection("Third-party services") {
-        "FitCal relies on third-party services including Cloudflare, Supabase, OpenRouter, " +
-            "Google, Groq, AppLovin, and RevenueCat. Their terms also apply to you in " +
+        "FitCal relies on third-party services including Supabase, OpenRouter, Google, " +
+            "Groq, and RevenueCat. Their terms also apply to you in " +
             "relation to their services."
     }
 

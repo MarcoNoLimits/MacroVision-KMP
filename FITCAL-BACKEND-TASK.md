@@ -1,5 +1,9 @@
 # FITCAL — Backend Foundation Task (v2)
 
+> **⚠️ Superseded (2026-10-07) — historical record only.** The Cloudflare Worker this document
+> describes was removed; the gateway is the Supabase Edge Function `supabase/functions/analyze-meal`.
+> For current state and next steps see `AGENTS.md` and `tasks/NEXT.md`.
+
 > **Repo:** `C:\GitHub\Fitter` (Kotlin Multiplatform: `:shared`, `:FitCal-UI`, `iosApp`)
 > **Goal:** Turn FitCal into a fully functioning, independent app with **proper authentication** — no client-side secrets, authenticated gateway calls, server-enforced quotas, account identity, sync, telemetry.
 > **Status:** v2 (auth-first) was implemented by a prior IDE run: Worker JWT auth, server-side quota, key removal, GatewayNutritionClient all landed and **compile green (44/44 tasks) with 69 tests passing**. Remaining: the `consume_scan(p_user_id)` service-role plumbing bug (P1), live-credentials verification, and this doc's **Phase 2b (dedicated `fitcal` schema DB)**, which is NOT yet implemented.

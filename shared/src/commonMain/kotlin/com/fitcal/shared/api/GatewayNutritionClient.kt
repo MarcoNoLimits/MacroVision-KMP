@@ -74,7 +74,7 @@ data class DeleteAccountResponse(
 )
 
 /**
- * Production NutritionClient that routes all AI inference through the Cloudflare Worker gateway.
+ * Production NutritionClient that routes all AI inference through the Supabase Edge Function gateway (analyze-meal).
  *
  * - Adds `Authorization: Bearer <jwt>` to every request.
  * - Sends `x-device-id` for secondary rate-limit tracking.
@@ -83,7 +83,7 @@ data class DeleteAccountResponse(
  * - Phase 10: Automatic re-authentication on 401 or missing JWT + retry once before failing.
  * - Phase 10: 1 bounded network retry for transient transport errors.
  *
- * @param gatewayUrl  e.g. "https://fitcal-gateway.workers.dev" (no trailing slash)
+ * @param gatewayUrl  e.g. "https://<project>.supabase.co/functions/v1/analyze-meal" (no trailing slash)
  * @param jwtProvider Returns the current Supabase access token, or null if unauthenticated.
  * @param deviceIdProvider Returns a stable device identifier string.
  * @param reAuthenticator Injected callback to refresh or re-acquire the Supabase session on 401.
@@ -123,7 +123,7 @@ class GatewayNutritionClient(
         return when (val result = analyzeMealImageWithResult(base64Image, plateSizeInches)) {
             is AnalyzeResult.Success -> result.response
             is AnalyzeResult.QuotaExhausted -> throw Exception("Daily scan quota exhausted")
-            // AuthRequired from the server means the Worker actually rejected the token —
+            // AuthRequired from the server means the gateway actually rejected the token —
             // surface the real error message so it appears in the diagnostics log.
             is AnalyzeResult.AuthRequired -> throw Exception("Gateway: authentication rejected by server (HTTP 401)")
             is AnalyzeResult.Failed -> throw Exception(result.message)
@@ -140,7 +140,7 @@ class GatewayNutritionClient(
                 reAuthenticator.invoke()
                 jwt = jwtProvider()
             } catch (_: Throwable) {
-                // reAuth failed — proceed without a token; Worker will handle it
+                // reAuth failed — proceed without a token; the gateway will reject it with 401
             }
         }
 
@@ -222,7 +222,7 @@ class GatewayNutritionClient(
      *
      * Replaces the old client-side `grant_bonus_scan` PostgREST call, which let any
      * signed-in user mint unlimited bonus scans (migration 0005 revoked that RPC).
-     * The Worker derives the user from the verified JWT, never from this payload.
+     * The gateway derives the user from the verified JWT, never from this payload.
      */
     suspend fun claimRewardedAdBonus(amount: Int): Int? {
         return try {
@@ -282,8 +282,8 @@ class GatewayNutritionClient(
     }
 
     /**
-     * Variant that passes the Week-1/Week-2 allowance from the client to the Worker.
-     * Worker caps at 5 server-side.
+     * Variant that passes the client's Week-1/Week-2 allowance to the gateway.
+     * Informational only: the gateway computes the real allowance server-side.
      */
     suspend fun analyzeMealImageWithAllowance(
         base64Image: String,
@@ -392,7 +392,7 @@ class GatewayNutritionClient(
 
 
     /**
-     * Fetch premium entitlement state from the Worker (JWT-authenticated).
+     * Fetch premium entitlement state from the gateway (JWT-authenticated).
      * Returns null on network failure (caller should use cached state).
      */
     suspend fun fetchEntitlements(): EntitlementState? {

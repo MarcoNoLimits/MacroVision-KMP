@@ -1,5 +1,14 @@
 # FitCal — Security & Privacy Remediation Notes
 
+> **Update 2026-10-07 — read first.** The Cloudflare Worker described below was never the live
+> gateway and has been deleted. The live gateway is the Supabase Edge Function
+> `supabase/functions/analyze-meal`, which now carries the equivalent fixes: every call verifies
+> the token with Supabase Auth (S-auth), the RevenueCat webhook fails closed without its secret
+> (S1), no wildcard CORS (S5), no leaked error detail (S7), the guarded system prompt (L1), and a
+> server-computed scan allowance. S2 (shared cache) does not apply: the function does not cache.
+> Migrations 0005 (S3 quota bypass), 0006 and 0007 are applied to production. AppLovin MAX was
+> removed; ads are Google AdMob only, with consent through Google UMP.
+
 Date: 2026-02-15
 Scope: `C:\GitHub\Fitter` — Kotlin Multiplatform (Android/iOS), Cloudflare Worker gateway, Supabase (Postgres + RLS), AdMob/AppLovin MAX, RevenueCat.
 

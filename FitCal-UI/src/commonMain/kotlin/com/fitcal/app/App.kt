@@ -12,7 +12,6 @@ import androidx.navigation.toRoute
 import com.fitcal.app.ads.AdManager
 import com.fitcal.app.privacy.PrivacyConsent
 import com.fitcal.app.ui.screens.privacy.PrivacyConsentScreen
-import com.fitcal.app.ads.AppOpenAdManager
 import com.fitcal.app.ads.ScanQuotaManager
 import com.fitcal.app.data.PreferenceKeyValueStorage
 import com.fitcal.app.telemetry.CohortRetentionTracker
@@ -327,10 +326,8 @@ fun App() {
                     TelemetryUploader.triggerFlush()
                 }
 
-                // Session & Ad Lifecycle + Meal Scan Reminder Notifications
-                AppOpenAdManager.incrementSessionCount()
+                // Ad preload + Meal Scan Reminder Notifications
                 adManager.preloadAds()
-                adManager.showAppOpenAdIfEligible()
                 com.fitcal.app.notifications.MealReminderManager.syncNotifications()
             }
 
@@ -381,7 +378,7 @@ fun App() {
                 )
             }
 
-            // Client-side mock mode is retired. The Worker controls mock responses via FITCAL_ENV=dev.
+            // Client-side mock mode is retired. The gateway controls mock responses via FITCAL_ENV=dev.
             // Keep isMockMode = false so CameraScreen/ResultScreen compile without changes.
             val isMockMode = false
 

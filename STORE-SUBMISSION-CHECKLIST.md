@@ -29,7 +29,7 @@ the conservative answer protects you in review:
 | Data collected | Account email (optional), Photos/Pictures, Fitness/Health, App activity, Crash logs, Device IDs |
 | Encrypted in transit? | **Yes** (TLS only; `usesCleartextTraffic=false`) |
 | Can users request data deletion? | **Yes** — in-app: Settings → Privacy → "Delete my account and data" |
-| Data shared with third parties | **Yes** — advertising partners (Google AdMob / AppLovin MAX), and AI inference providers (OpenRouter, Google, Groq) |
+| Data shared with third parties | **Yes** — advertising partner (Google AdMob), and AI inference providers (OpenRouter, Google, Groq) |
 | Purposes | Analytics, Advertising or marketing, App functionality, Personalization |
 
 ### Required store assets
@@ -46,7 +46,7 @@ the conservative answer protects you in review:
 | Requirement | Status |
 |---|---|
 | Privacy policy on a **public, non-app-hosted** URL | Required. Hosted version needed. |
-| Consent banner (CMP) for EEA/UK/Switzerland | Implemented — UMP via AppLovin CMP, awaited before ad init |
+| Consent banner (CMP) for EEA/UK/Switzerland | Implemented — Google UMP, awaited before ad init |
 | App content must be substantial | Addressed: browsable Food Library (~113 foods, offline reference) |
 | Age-appropriate content rating | 18+ only |
 | No invalid traffic (self-clicked ads) | Rewarded ads require genuine user interaction — keep it |
@@ -97,10 +97,9 @@ for adults 18+. It is not a substitute for professional medical or dietary advic
 ## 4. Host the privacy policy (do this first)
 
 The in-app text lives at `FitCal-UI/src/commonMain/kotlin/com/fitcal/app/ui/screens/privacy/PrivacyPolicyScreen.kt`.
-For the store listing you also need a **public URL**. FitCal supports this out of the box:
-
-- **Gateway Worker Route (Default):** The Cloudflare Worker directly serves `GET /privacy` and `GET /privacy.html` at `https://<GATEWAY_URL>/privacy` (zero extra hosting setup required).
-- **Static Hosting (Optional Alternative):**
+For the store listing you also need a **public URL**. Host the static `privacy.html` (the old
+Cloudflare Worker that served `/privacy` has been removed). The same domain should also host
+`app-ads.txt`, which AdMob requires:
 ```bash
 # From the repo root — one file, no build step
 cp privacy.html public/index.html
@@ -109,7 +108,7 @@ npx vercel deploy public --prod     # or: netlify deploy --prod --dir=public
 
 Replace every placeholder before publishing:
 - `privacy@fitcal.app` — use a mailbox you actually monitor (reviewers test it)
-- `Last updated: February 2026` — set the real publish date
+- `Last updated: October 2026` — set the real publish date
 - Add your legal entity name and jurisdiction if you have one
 
 **The hosted page and the in-app text must agree.** If they diverge, that is itself a
@@ -133,10 +132,10 @@ the onboarding claim.
 ## 6. Final pre-submission checklist
 
 - [x] `./gradlew :FitCal-UI:testDebugUnitTest` and `:FitCal-UI:bundleRelease` pass (fully compiler-verified & release AAB generated)
-- [ ] `cd worker && npx wrangler deploy` — hardened Worker is live
-- [ ] `supabase db push` — **migration 0005**, or the quota bypass is exploitable
-- [ ] `REVENUECAT_WEBHOOK_SECRET` set in the Worker (entitlements fail closed without it)
-- [ ] Real iOS AdMob app id in `iosApp/Configuration/Config.xcconfig`
+- [x] Hardened `analyze-meal` Edge Function deployed (v7, 2026-10-07)
+- [x] Migrations 0005–0007 applied to production
+- [ ] `REVENUECAT_WEBHOOK_SECRET` set in Supabase Edge Function secrets (entitlements fail closed without it)
+- [ ] ~~Real iOS AdMob app id~~ — iOS is out of v1
 - [ ] Privacy policy published at a public URL
 - [ ] Data safety form completed per §1
 - [ ] Target audience set to **18+** (NOT 13–17)

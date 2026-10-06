@@ -19,5 +19,3 @@ captures
 **/xcshareddata/WorkspaceSettings.xcsettings
 iosApp/Configuration/Config.xcconfig
 worker/.dev.vars
-worker/.wrangler/
-worker/node_modules/

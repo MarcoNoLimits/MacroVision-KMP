@@ -18,7 +18,6 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.fitcal.app.ads.AdConfig
 import com.fitcal.app.ads.AdManager
 import com.fitcal.app.ads.ScanQuotaManager
 import com.fitcal.app.ui.theme.*
@@ -164,48 +163,6 @@ fun MonetizationScreen(
                         color = PrimaryAccent,
                         fontWeight = FontWeight.Bold
                     )
-                }
-            }
-        }
-
-        // Section 3: Provider & Diagnostics
-        Card(
-            colors = CardDefaults.cardColors(containerColor = CardBackground),
-            shape = RoundedCornerShape(RadiusL),
-            modifier = Modifier
-                .fillMaxWidth()
-                .shadow(2.dp, RoundedCornerShape(RadiusL))
-                .border(1.dp, BorderColor, RoundedCornerShape(RadiusL))
-        ) {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Text(
-                    text = "AD DELIVERY",
-                    style = BrandTypography.CardTitle,
-                    color = MutedTextColor
-                )
-                Text(
-                    text = if (AdConfig.isProductionMediationEnabled) "Provider: AppLovin MAX Unified Bidding (Google + Meta + Unity)" else "Provider: Google AdMob (Official Test Units)",
-                    style = BrandTypography.BodySmall,
-                    color = MutedTextColor,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.Medium
-                )
-
-                if (AdConfig.isProductionMediationEnabled) {
-                    OutlinedButton(
-                        onClick = { adManager.showMediationDebugger() },
-                        shape = RoundedCornerShape(RadiusXS),
-                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
-                    ) {
-                        Text(
-                            text = "Launch MAX Mediation Debugger",
-                            style = BrandTypography.BodySmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = TextColor
-                        )
-                    }
                 }
             }
         }

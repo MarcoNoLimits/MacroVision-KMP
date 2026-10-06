@@ -36,14 +36,6 @@ class ScanQuotaManagerTest {
         }
         ScanQuotaManager.currentTimeMillisProvider = { simulatedTimeMillis }
 
-        AppOpenAdManager.preferenceReader = { key, default ->
-            memoryStore[key] ?: default
-        }
-        AppOpenAdManager.preferenceWriter = { key, value ->
-            memoryStore[key] = value
-        }
-        AppOpenAdManager.currentTimeMillisProvider = { simulatedTimeMillis }
-
         AdTelemetryManager.preferenceReader = { key, default ->
             memoryStore[key] ?: default
         }
@@ -60,7 +52,6 @@ class ScanQuotaManagerTest {
     @AfterTest
     fun tearDown() {
         ScanQuotaManager.resetToDefaults()
-        AppOpenAdManager.resetToDefaults()
         AdTelemetryManager.resetForTesting()
         com.fitcal.shared.subscription.SubscriptionManager.resetForTesting()
         com.fitcal.shared.telemetry.TelemetryUploader.userIdProvider = { null }
@@ -201,40 +192,6 @@ class ScanQuotaManagerTest {
     }
 
     @Test
-    fun testAppOpenAdRespectsSessionGracePeriodAndCooldown() {
-        // Sessions 1-3 should NOT allow App Open ad (Grace Period)
-        assertEquals(0, AppOpenAdManager.getSessionCount())
-        assertFalse(AppOpenAdManager.canShowAppOpenAd())
-
-        AppOpenAdManager.incrementSessionCount() // Session 1
-        assertFalse(AppOpenAdManager.canShowAppOpenAd())
-
-        AppOpenAdManager.incrementSessionCount() // Session 2
-        assertFalse(AppOpenAdManager.canShowAppOpenAd())
-
-        AppOpenAdManager.incrementSessionCount() // Session 3
-        assertFalse(AppOpenAdManager.canShowAppOpenAd())
-
-        // Session 4 allows App Open ad
-        AppOpenAdManager.incrementSessionCount() // Session 4
-        assertTrue(AppOpenAdManager.canShowAppOpenAd())
-
-        // Show ad
-        AppOpenAdManager.recordAppOpenAdShown()
-
-        // Immediate check should be false (cooldown active)
-        assertFalse(AppOpenAdManager.canShowAppOpenAd())
-
-        // Advance simulated time by 3 hours (less than 4h cooldown)
-        simulatedTimeMillis += 3L * 60 * 60 * 1000L
-        assertFalse(AppOpenAdManager.canShowAppOpenAd())
-
-        // Advance by another 1.1 hours (total > 4h)
-        simulatedTimeMillis += (1L * 60 * 60 * 1000L + 60000L)
-        assertTrue(AppOpenAdManager.canShowAppOpenAd())
-    }
-
-    @Test
     fun testFitCalPremiumEntitlementGrantsUnlimitedScansAndSuppressesAds() {
         // Given a user with exhausted daily quota (Week 2+, 3 used scans)
         repeat(3) {
@@ -337,12 +294,11 @@ class ScanQuotaManagerTest {
     }
 
     @Test
-    fun testDebugBuildRoutesAllFourAdUnitsToGoogleTestIds() {
+    fun testDebugBuildRoutesAllAdUnitsToGoogleTestIds() {
         assertTrue(com.fitcal.app.isDebugBuild)
         assertEquals(AdConfig.ANDROID_TEST_BANNER, AdConfig.ANDROID_BANNER)
         assertEquals(AdConfig.ANDROID_TEST_INTERSTITIAL, AdConfig.ANDROID_INTERSTITIAL)
         assertEquals(AdConfig.ANDROID_TEST_REWARDED, AdConfig.ANDROID_REWARDED)
-        assertEquals(AdConfig.ANDROID_TEST_APP_OPEN, AdConfig.ANDROID_APP_OPEN)
     }
 }
 

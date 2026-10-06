@@ -46,7 +46,7 @@ class SubscriptionManagerTest {
 
     @Test
     fun testServerEntitlementIsAcceptedWhenFresh() {
-        // Worker / RevenueCat webhook stamped server entitlement 1 hour ago
+        // Gateway / RevenueCat webhook stamped server entitlement 1 hour ago
         val oneHourAgo = simulatedTime - (60 * 60 * 1000L)
         storage.putString("subscription_fitcal_premium_active", "true")
         storage.putString("subscription_entitlement_source", "server")

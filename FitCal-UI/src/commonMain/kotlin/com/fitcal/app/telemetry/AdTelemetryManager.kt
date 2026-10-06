@@ -6,14 +6,14 @@ import com.fitcal.app.savePreference
 import kotlinx.serialization.Serializable
 
 /**
- * Encapsulates revenue callback data from AppLovin MAX / AdMob Bidding.
+ * Revenue for one ad impression, from AdMob paid-event callbacks.
  */
 @Serializable
 data class AdRevenuePayload(
     val adUnitId: String,
     val networkName: String,
     val revenue: Double, // Revenue in USD (e.g. 0.0035)
-    val format: String, // "BANNER", "INTERSTITIAL", "REWARDED", "APP_OPEN"
+    val format: String, // "BANNER", "INTERSTITIAL", "REWARDED"
     val placement: String = "",
     val creativeId: String = "",
     val timestampMillis: Long = 0L
@@ -23,11 +23,6 @@ data class AdRevenuePayload(
  * Snapshot summary of ad telemetry and monetization metrics.
  */
 data class AdTelemetrySummary(
-    val appOpenRequests: Long,
-    val appOpenLoaded: Long,
-    val appOpenImpressions: Long,
-    val appOpenFillRate: Double,
-    val appOpenImpressionRate: Double,
     val totalRevenueUsd: Double,
     val totalImpressions: Long,
     val estimatedEcpm: Double,
@@ -36,15 +31,11 @@ data class AdTelemetrySummary(
 
 /**
  * Central telemetry manager for ad delivery performance and monetization analytics.
- * Tracks App Open ad requests, fill rates, impression triggers, and MAX revenue callbacks.
+ * Tracks impressions per format and AdMob paid-event revenue.
  * Computes live ARPDAU and eCPM metrics with persistent storage support.
  */
 object AdTelemetryManager {
 
-    private const val KEY_APP_OPEN_REQUESTS = "telemetry_ad_app_open_requests"
-    private const val KEY_APP_OPEN_LOADED = "telemetry_ad_app_open_loaded"
-    private const val KEY_APP_OPEN_FAILED = "telemetry_ad_app_open_failed"
-    private const val KEY_APP_OPEN_IMPRESSIONS = "telemetry_ad_app_open_impressions"
 
     private const val KEY_TOTAL_REVENUE = "telemetry_ad_total_revenue_usd"
     private const val KEY_TOTAL_IMPRESSIONS = "telemetry_ad_total_impressions"
@@ -80,63 +71,6 @@ object AdTelemetryManager {
         preferenceWriter = { key, value -> savePreference(key, value) }
         currentTimeMillisProvider = { getCurrentEpochMillis() }
         revenueListeners.clear()
-    }
-
-    // --- App Open Ad Tracking ---
-
-    fun trackAppOpenRequest() {
-        val current = getAppOpenRequests()
-        preferenceWriter(KEY_APP_OPEN_REQUESTS, (current + 1).toString())
-    }
-
-    fun trackAppOpenLoaded() {
-        val current = getAppOpenLoaded()
-        preferenceWriter(KEY_APP_OPEN_LOADED, (current + 1).toString())
-    }
-
-    fun trackAppOpenFailedToLoad(errorMessage: String? = null) {
-        val current = preferenceReader(KEY_APP_OPEN_FAILED, "0").toLongOrNull() ?: 0L
-        preferenceWriter(KEY_APP_OPEN_FAILED, (current + 1).toString())
-        DiagnosticsCrashHook.logAdError("MAX/AdMob", "APP_OPEN", null, errorMessage ?: "App Open Ad failed to load")
-    }
-
-    fun trackAppOpenImpression() {
-        val appOpenImp = getAppOpenImpressions()
-        preferenceWriter(KEY_APP_OPEN_IMPRESSIONS, (appOpenImp + 1).toString())
-        incrementTotalImpressions()
-        com.fitcal.shared.telemetry.TelemetryUploader.trackAdImpression("APP_OPEN")
-    }
-
-    fun getAppOpenRequests(): Long =
-        preferenceReader(KEY_APP_OPEN_REQUESTS, "0").toLongOrNull() ?: 0L
-
-    fun getAppOpenLoaded(): Long =
-        preferenceReader(KEY_APP_OPEN_LOADED, "0").toLongOrNull() ?: 0L
-
-    fun getAppOpenFailed(): Long =
-        preferenceReader(KEY_APP_OPEN_FAILED, "0").toLongOrNull() ?: 0L
-
-    fun getAppOpenImpressions(): Long =
-        preferenceReader(KEY_APP_OPEN_IMPRESSIONS, "0").toLongOrNull() ?: 0L
-
-    /**
-     * App Open Fill Rate: loaded / requests.
-     * Returns a ratio from 0.0 to 1.0 (or 0.0 if no requests).
-     */
-    fun getAppOpenFillRate(): Double {
-        val requests = getAppOpenRequests()
-        if (requests <= 0L) return 0.0
-        return getAppOpenLoaded().toDouble() / requests.toDouble()
-    }
-
-    /**
-     * App Open Impression Rate: impressions / loaded.
-     * Evaluates display conversion rate.
-     */
-    fun getAppOpenImpressionRate(): Double {
-        val loaded = getAppOpenLoaded()
-        if (loaded <= 0L) return 0.0
-        return getAppOpenImpressions().toDouble() / loaded.toDouble()
     }
 
     // --- Format Impressions Tracking ---
@@ -179,10 +113,10 @@ object AdTelemetryManager {
         preferenceWriter(KEY_TOTAL_IMPRESSIONS, (current + 1).toString())
     }
 
-    // --- MAX Revenue Tracking & ARPDAU / eCPM Bridging ---
+    // --- Revenue Tracking & ARPDAU / eCPM ---
 
     /**
-     * Bridges AppLovin MAX `MaxAdRevenueListener.onAdRevenuePaid(ad)` callbacks
+     * Records AdMob `OnPaidEventListener` revenue
      * to cumulative revenue and financial metric tracking.
      */
     fun trackAdRevenue(payload: AdRevenuePayload) {
@@ -223,7 +157,6 @@ object AdTelemetryManager {
         "BANNER" -> getBannerImpressions()
         "INTERSTITIAL" -> getInterstitialImpressions()
         "REWARDED" -> getRewardedImpressions()
-        "APP_OPEN" -> getAppOpenImpressions()
         else -> 0L
     }
 
@@ -251,11 +184,6 @@ object AdTelemetryManager {
      */
     fun getTelemetrySummary(dailyActiveUsers: Int = 1): AdTelemetrySummary {
         return AdTelemetrySummary(
-            appOpenRequests = getAppOpenRequests(),
-            appOpenLoaded = getAppOpenLoaded(),
-            appOpenImpressions = getAppOpenImpressions(),
-            appOpenFillRate = getAppOpenFillRate(),
-            appOpenImpressionRate = getAppOpenImpressionRate(),
             totalRevenueUsd = getTotalRevenueUsd(),
             totalImpressions = getTotalImpressions(),
             estimatedEcpm = calculateEcpm(),

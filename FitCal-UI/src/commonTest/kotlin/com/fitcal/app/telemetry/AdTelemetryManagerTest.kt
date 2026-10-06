@@ -29,11 +29,6 @@ class AdTelemetryManagerTest {
 
     @Test
     fun testInitialTelemetryState() {
-        assertEquals(0L, AdTelemetryManager.getAppOpenRequests())
-        assertEquals(0L, AdTelemetryManager.getAppOpenLoaded())
-        assertEquals(0L, AdTelemetryManager.getAppOpenImpressions())
-        assertEquals(0.0, AdTelemetryManager.getAppOpenFillRate())
-        assertEquals(0.0, AdTelemetryManager.getAppOpenImpressionRate())
         assertEquals(0.0, AdTelemetryManager.getTotalRevenueUsd())
         assertEquals(0L, AdTelemetryManager.getTotalImpressions())
         assertEquals(0.0, AdTelemetryManager.calculateEcpm())
@@ -41,46 +36,15 @@ class AdTelemetryManagerTest {
     }
 
     @Test
-    fun testAppOpenAdRequestAndFillRateTracking() {
-        // Request 1
-        AdTelemetryManager.trackAppOpenRequest()
-        assertEquals(1L, AdTelemetryManager.getAppOpenRequests())
-        assertEquals(0L, AdTelemetryManager.getAppOpenLoaded())
-        assertEquals(0.0, AdTelemetryManager.getAppOpenFillRate())
-
-        // Load 1
-        AdTelemetryManager.trackAppOpenLoaded()
-        assertEquals(1L, AdTelemetryManager.getAppOpenLoaded())
-        assertEquals(1.0, AdTelemetryManager.getAppOpenFillRate())
-
-        // Request 2 (e.g. fill rate now 50%)
-        AdTelemetryManager.trackAppOpenRequest()
-        assertEquals(2L, AdTelemetryManager.getAppOpenRequests())
-        assertEquals(0.5, AdTelemetryManager.getAppOpenFillRate())
-
-        // Impression 1
-        AdTelemetryManager.trackAppOpenImpression()
-        assertEquals(1L, AdTelemetryManager.getAppOpenImpressions())
-        assertEquals(1L, AdTelemetryManager.getTotalImpressions())
-        assertEquals(1.0, AdTelemetryManager.getAppOpenImpressionRate())
-
-        // Failure
-        AdTelemetryManager.trackAppOpenFailedToLoad("Timeout loading App Open ad")
-        assertEquals(1L, AdTelemetryManager.getAppOpenFailed())
-    }
-
-    @Test
     fun testImpressionsAcrossFormats() {
         AdTelemetryManager.trackInterstitialImpression()
         AdTelemetryManager.trackRewardedImpression()
         AdTelemetryManager.trackBannerImpression()
-        AdTelemetryManager.trackAppOpenImpression()
 
         assertEquals(1L, AdTelemetryManager.getInterstitialImpressions())
         assertEquals(1L, AdTelemetryManager.getRewardedImpressions())
         assertEquals(1L, AdTelemetryManager.getBannerImpressions())
-        assertEquals(1L, AdTelemetryManager.getAppOpenImpressions())
-        assertEquals(4L, AdTelemetryManager.getTotalImpressions())
+        assertEquals(3L, AdTelemetryManager.getTotalImpressions())
     }
 
     @Test
@@ -92,10 +56,10 @@ class AdTelemetryManagerTest {
             capturedPayload = payload
         }
 
-        // Record MAX Interstitial revenue: $0.025 with 1 impression
+        // Record interstitial revenue: $0.025 with 1 impression
         val payload1 = AdRevenuePayload(
-            adUnitId = "max_interstitial_unit",
-            networkName = "AppLovin",
+            adUnitId = "interstitial_unit",
+            networkName = "AdMob",
             revenue = 0.025,
             format = "INTERSTITIAL",
             placement = "scan_processing"
@@ -112,10 +76,10 @@ class AdTelemetryManagerTest {
         assertEquals(25.0, AdTelemetryManager.calculateEcpm())
         assertEquals(25.0, AdTelemetryManager.calculateEcpm("INTERSTITIAL"))
 
-        // Record MAX Rewarded revenue: $0.050 with 1 impression
+        // Record rewarded revenue: $0.050 with 1 impression
         val payload2 = AdRevenuePayload(
-            adUnitId = "max_rewarded_unit",
-            networkName = "Google Bidding",
+            adUnitId = "rewarded_unit",
+            networkName = "AdMob",
             revenue = 0.050,
             format = "REWARDED",
             placement = "quota_unlock"
@@ -150,24 +114,17 @@ class AdTelemetryManagerTest {
 
     @Test
     fun testTelemetrySummaryGeneration() {
-        AdTelemetryManager.trackAppOpenRequest()
-        AdTelemetryManager.trackAppOpenLoaded()
-        AdTelemetryManager.trackAppOpenImpression()
+        AdTelemetryManager.trackBannerImpression()
         AdTelemetryManager.trackAdRevenue(
             AdRevenuePayload(
-                adUnitId = "open_1",
-                networkName = "Google",
+                adUnitId = "banner_1",
+                networkName = "AdMob",
                 revenue = 0.02,
-                format = "APP_OPEN"
+                format = "BANNER"
             )
         )
 
         val summary = AdTelemetryManager.getTelemetrySummary(dailyActiveUsers = 2)
-        assertEquals(1L, summary.appOpenRequests)
-        assertEquals(1L, summary.appOpenLoaded)
-        assertEquals(1L, summary.appOpenImpressions)
-        assertEquals(1.0, summary.appOpenFillRate)
-        assertEquals(1.0, summary.appOpenImpressionRate)
         assertEquals(0.02, summary.totalRevenueUsd)
         assertEquals(1L, summary.totalImpressions)
         assertEquals(20.0, summary.estimatedEcpm)
@@ -176,8 +133,7 @@ class AdTelemetryManagerTest {
 
     @Test
     fun testPersistenceSurvivesManagerReset() {
-        AdTelemetryManager.trackAppOpenRequest()
-        AdTelemetryManager.trackAppOpenLoaded()
+        AdTelemetryManager.trackRewardedImpression()
         AdTelemetryManager.trackAdRevenue(
             AdRevenuePayload(
                 adUnitId = "u1",
@@ -192,8 +148,7 @@ class AdTelemetryManagerTest {
         AdTelemetryManager.preferenceReader = { key, default -> memoryStore[key] ?: default }
         AdTelemetryManager.preferenceWriter = { key, value -> memoryStore[key] = value }
 
-        assertEquals(1L, AdTelemetryManager.getAppOpenRequests())
-        assertEquals(1L, AdTelemetryManager.getAppOpenLoaded())
+        assertEquals(1L, AdTelemetryManager.getRewardedImpressions())
         assertEquals(0.05, AdTelemetryManager.getTotalRevenueUsd())
     }
 }

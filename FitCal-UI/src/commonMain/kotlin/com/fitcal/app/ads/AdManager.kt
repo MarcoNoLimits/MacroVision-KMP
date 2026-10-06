@@ -18,14 +18,12 @@ object AdConfig {
     const val ANDROID_TEST_BANNER = "ca-app-pub-3940256099942544/6300978111"
     const val ANDROID_TEST_INTERSTITIAL = "ca-app-pub-3940256099942544/1033173712"
     const val ANDROID_TEST_REWARDED = "ca-app-pub-3940256099942544/5224354917"
-    const val ANDROID_TEST_APP_OPEN = "ca-app-pub-3940256099942544/9257390401"
 
     // Android Production Ad Units (FitCal — App ID ca-app-pub-8255091497626517~5945613703)
     const val ANDROID_APP_ID = "ca-app-pub-8255091497626517~5945613703"
     const val ANDROID_PROD_BANNER = "ca-app-pub-8255091497626517/2588822623"
     const val ANDROID_PROD_INTERSTITIAL = "ca-app-pub-8255091497626517/3343676102"
     const val ANDROID_PROD_REWARDED = "ca-app-pub-8255091497626517/2201061388"
-    const val ANDROID_PROD_APP_OPEN = "ca-app-pub-8255091497626517/9637446708"
 
     val ANDROID_BANNER: String
         get() = if (com.fitcal.app.isDebugBuild) ANDROID_TEST_BANNER else ANDROID_PROD_BANNER
@@ -36,28 +34,11 @@ object AdConfig {
     val ANDROID_REWARDED: String
         get() = if (com.fitcal.app.isDebugBuild) ANDROID_TEST_REWARDED else ANDROID_PROD_REWARDED
 
-    val ANDROID_APP_OPEN: String
-        get() = if (com.fitcal.app.isDebugBuild) ANDROID_TEST_APP_OPEN else ANDROID_PROD_APP_OPEN
-
     // iOS Test Ad Units (still using Google's official test IDs — replace when iOS ships)
     const val IOS_TEST_APP_ID = "ca-app-pub-3940256099942544~1458002511"
     const val IOS_TEST_BANNER = "ca-app-pub-3940256099942544/2934735716"
     const val IOS_TEST_INTERSTITIAL = "ca-app-pub-3940256099942544/4411468910"
     const val IOS_TEST_REWARDED = "ca-app-pub-3940256099942544/1712485313"
-    const val IOS_TEST_APP_OPEN = "ca-app-pub-3940256099942544/5575463023"
-
-    // AppLovin MAX Unified Mediation Units (Task 3: MAX + AdMob real-time bidding + Meta/Unity/Mintegral)
-    var isProductionMediationEnabled: Boolean = false
-    var maxSdkKey: String = ""
-    var maxAndroidInterstitialId: String = ""
-    var maxAndroidRewardedId: String = ""
-    var maxAndroidBannerId: String = ""
-    var maxAndroidAppOpenId: String = ""
-
-    var maxIosInterstitialId: String = ""
-    var maxIosRewardedId: String = ""
-    var maxIosBannerId: String = ""
-    var maxIosAppOpenId: String = ""
 
     // Brand Safety Categories (Task 6: Strict Category Filtering)
     val BLOCKED_AD_CATEGORIES = listOf(
@@ -85,8 +66,6 @@ object AdConfig {
     const val REWARDED_SCAN_BONUS = 2
     const val ACCOUNT_DAILY_BONUS_SCANS = 1
     const val SEVEN_DAYS_MILLIS = 7L * 24 * 60 * 60 * 1000L
-    const val APP_OPEN_COOLDOWN_MILLIS = 4L * 60 * 60 * 1000L
-    const val APP_OPEN_SESSION_GRACE_COUNT = 3
 }
 
 /**
@@ -114,15 +93,6 @@ interface AdManager {
 
     /** Preloads ads in the background. */
     fun preloadAds()
-
-    /** Preloads an App Open ad in the background. */
-    fun preloadAppOpenAd() {}
-
-    /** Shows an App Open ad if session count and cooldown requirements are met. */
-    fun showAppOpenAdIfEligible(onDismissed: () -> Unit = {}) {}
-
-    /** Opens AppLovin MAX Mediation Debugger for on-device testing and certification. */
-    fun showMediationDebugger() {}
 }
 
 /**
@@ -317,67 +287,3 @@ object ScanQuotaManager {
     }
 }
 
-/**
- * Manages App Open Ad eligibility, enforcing a grace period and cooldown.
- * Policy:
- * 1. Grace period: Sessions 1, 2, 3 have zero App Open ads.
- * 2. Cooldown: Minimum 4 hours between impressions.
- */
-object AppOpenAdManager {
-    var preferenceReader: (key: String, defaultValue: String) -> String = { key, default ->
-        loadPreference(key, default)
-    }
-
-    var preferenceWriter: (key: String, value: String) -> Unit = { key, value ->
-        savePreference(key, value)
-    }
-
-    var currentTimeMillisProvider: () -> Long = { getCurrentEpochMillis() }
-
-    fun resetToDefaults() {
-        preferenceReader = { key, default -> loadPreference(key, default) }
-        preferenceWriter = { key, value -> savePreference(key, value) }
-        currentTimeMillisProvider = { getCurrentEpochMillis() }
-    }
-
-    fun getSessionCount(): Int {
-        return preferenceReader("session_count", "0").toIntOrNull() ?: 0
-    }
-
-    fun incrementSessionCount(): Int {
-        val newCount = getSessionCount() + 1
-        preferenceWriter("session_count", newCount.toString())
-        return newCount
-    }
-
-    fun getLastAppOpenAdTimestamp(): Long {
-        return preferenceReader("last_app_open_ad_timestamp", "0").toLongOrNull() ?: 0L
-    }
-
-    fun recordAppOpenAdRequested() {
-        com.fitcal.app.telemetry.AdTelemetryManager.trackAppOpenRequest()
-    }
-
-    fun recordAppOpenAdLoaded() {
-        com.fitcal.app.telemetry.AdTelemetryManager.trackAppOpenLoaded()
-    }
-
-    fun recordAppOpenAdFailedToLoad(errorMessage: String? = null) {
-        com.fitcal.app.telemetry.AdTelemetryManager.trackAppOpenFailedToLoad(errorMessage)
-    }
-
-    fun recordAppOpenAdShown() {
-        preferenceWriter("last_app_open_ad_timestamp", currentTimeMillisProvider().toString())
-        com.fitcal.app.telemetry.AdTelemetryManager.trackAppOpenImpression()
-    }
-
-    fun canShowAppOpenAd(): Boolean {
-        val sessionCount = getSessionCount()
-        if (sessionCount <= AdConfig.APP_OPEN_SESSION_GRACE_COUNT) {
-            return false
-        }
-        val lastShown = getLastAppOpenAdTimestamp()
-        val now = currentTimeMillisProvider()
-        return (now - lastShown) >= AdConfig.APP_OPEN_COOLDOWN_MILLIS
-    }
-}

@@ -39,10 +39,10 @@ private data class EntitlementResponse(
  * - [isPremiumUser] reads the LAST SERVER-CONFIRMED state from preferences.
  *   Stale > 24h → treated as false; refresh triggered automatically.
  * - [purchasePlan] no longer sets local boolean as source of truth.
- *   It triggers [refreshFromServer] which reads the Worker /v1/entitlements endpoint.
+ *   It triggers [refreshFromServer] which reads the gateway /v1/entitlements endpoint.
  * - [setPremiumStatus] remains available as a testing escape hatch only.
  *
- * Entitlement truth chain: RevenueCat → Worker webhook → KV → /v1/entitlements → here.
+ * Entitlement truth chain: RevenueCat → gateway webhook → entitlements table → /v1/entitlements → here.
  */
 object SubscriptionManager {
     const val ENTITLEMENT_FITCAL_PREMIUM = "fitcal_premium"
@@ -119,7 +119,7 @@ object SubscriptionManager {
             val saved = (storage.getString(KEY_PREMIUM_ACTIVE, "")
                 .takeIf { it.isNotEmpty() }
                 ?: storage.getString(LEGACY_KEY_PREMIUM_ACTIVE, "false")).toBoolean()
-            // "server" = Worker-confirmed, "test" = injected by setPremiumStatus for test escape hatch
+            // "server" = gateway-confirmed, "test" = injected by setPremiumStatus for test escape hatch
             return if ((source == "server" || source == "test") && !isStale) saved else false
         }
         return _isPremiumFlow.value
@@ -147,7 +147,7 @@ object SubscriptionManager {
     }
 
     /**
-     * Refresh premium entitlement from the Worker /v1/entitlements endpoint.
+     * Refresh premium entitlement from the gateway /v1/entitlements endpoint.
      * This is the canonical server sync — not the client-set local boolean.
      *
      * Returns true if premium, false if not, null on network failure.
@@ -186,7 +186,7 @@ object SubscriptionManager {
      */
     suspend fun purchasePlan(productId: String, gatewayUrl: String, jwtProvider: () -> String?): Result<Boolean> {
         return try {
-            // RevenueCat webhook fires to Worker → KV in a few seconds after purchase.
+            // RevenueCat webhook reaches the gateway within a few seconds after purchase.
             // Poll once (immediate) and once after a 3s delay to give webhook time to land.
             val immediate = refreshFromServer(gatewayUrl, jwtProvider)
             if (immediate == true) return Result.success(true)
