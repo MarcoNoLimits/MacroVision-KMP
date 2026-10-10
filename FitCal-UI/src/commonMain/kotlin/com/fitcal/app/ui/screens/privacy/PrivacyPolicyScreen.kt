@@ -67,7 +67,7 @@ fun PrivacyPolicyScreen(
 
             Spacer(Modifier.height(24.dp))
             Text(
-                text = "Questions about this document? Contact us at privacy@fitcal.app",
+                text = "Questions about this document? Contact us at fitcal@tecaa.xyz",
                 fontSize = 12.sp,
                 color = MutedTextColor,
             )
@@ -121,7 +121,12 @@ private fun PrivacyPolicyContent() {
             "• Nutrition estimates generated from those photographs\n" +
             "• Account email address, if you choose to create an account\n" +
             "• Water intake, weight, and meal log entries you record\n" +
-            "• Technical data: device identifiers, crash logs, and crash diagnostics\n" +
+            "• App usage events: which screens and features you use, scan timing and errors, " +
+            "and how much you changed an estimate before logging it (counts only, never meal " +
+            "names, nutrition values or photos)\n" +
+            "• Feedback you choose to send: your message, an optional reply email, and " +
+            "thumbs up/down ratings of estimates\n" +
+            "• Technical data: app version, device identifiers, crash reports, and diagnostics\n" +
             "• Advertising identifiers and ad interaction events (see Advertising below)"
     }
 
@@ -135,8 +140,9 @@ private fun PrivacyPolicyContent() {
     PolicySection("Legal bases for processing (GDPR)") {
         "• **Consent** (Art. 6(1)(a)) — meal photo analysis and personalized advertising\n" +
             "• **Contract** (Art. 6(1)(b)) — providing the app's core functionality\n" +
-            "• **Legitimate interests** (Art. 6(1)(f)) — crash diagnostics and security, " +
-            "balanced against your rights\n\n" +
+            "• **Legitimate interests** (Art. 6(1)(f)) — usage analytics, crash diagnostics " +
+            "and security, balanced against your rights. You can object at any time with " +
+            "Settings → Privacy → Share usage analytics.\n\n" +
             "For special-category processing we rely on your explicit consent (Art. 9(2)(a))."
     }
 
@@ -144,7 +150,9 @@ private fun PrivacyPolicyContent() {
         "Our backend runs on Supabase, hosted in the EU (Ireland). Photographs are " +
             "forwarded to third-party AI providers — OpenRouter, Google, and Groq — solely " +
             "to generate estimates. " +
-            "Account data is stored in Supabase. Payments are handled by RevenueCat and " +
+            "Account data and usage events are stored in Supabase. Crash reports are " +
+            "processed by Sentry. Account emails (sign-up and password codes) are sent " +
+            "through Resend. Payments are handled by RevenueCat and " +
             "the relevant app store; we never see your full card details."
     }
 
@@ -165,12 +173,14 @@ private fun PrivacyPolicyContent() {
 
     PolicySection("How long we keep data") {
         "Meal photographs and nutrition logs are retained until you delete them or " +
-            "close your account. Cached analysis results are retained for up to 30 days. " +
+            "close your account. Our servers do not keep a separate cache of analysis results. " +
+            "App usage events are retained for up to 13 months, feedback for up to 24 months. " +
             "Crash and diagnostic logs are retained for up to 90 days."
     }
 
     PolicySection("Your rights") {
         "• Withdraw consent at any time (Settings → Privacy)\n" +
+            "• Turn off usage analytics and crash reports (Settings → Privacy)\n" +
             "• Delete your account and all associated data\n" +
             "• Request a copy of the data we hold about you\n" +
             "• Correct inaccurate information\n" +

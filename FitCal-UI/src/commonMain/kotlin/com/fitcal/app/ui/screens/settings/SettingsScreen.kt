@@ -33,6 +33,9 @@ import com.fitcal.app.ui.components.PressableBox
 import com.fitcal.app.ui.components.calculateBmr
 import com.fitcal.app.ui.components.plateSizeInchesToCmString
 import com.fitcal.app.privacy.PrivacyConsent
+import com.fitcal.app.telemetry.Analytics
+import com.fitcal.app.ui.screens.feedback.FeedbackDialog
+import com.fitcal.shared.api.FeedbackSendResult
 import com.fitcal.app.ui.theme.*
 import com.fitcal.shared.model.UserProfile
 
@@ -50,10 +53,14 @@ fun SettingsScreen(
     onSave: (UserProfile) -> Unit,
     onBack: () -> Unit,
     onDeleteAllData: (() -> Unit)? = null,
+    deletingAccount: Boolean = false,
+    deleteAccountMessage: String? = null,
     onOpenPrivacyPolicy: () -> Unit = {},
     onOpenTerms: () -> Unit = {},
+    onSendFeedback: (suspend (kind: String, message: String, email: String?) -> FeedbackSendResult)? = null,
 ) {
     val scrollState = rememberScrollState()
+    var showFeedback by remember { mutableStateOf(false) }
 
     var heightStr by remember { mutableStateOf(profile.height.toString()) }
     var weightStr by remember { mutableStateOf(profile.weight.toString()) }
@@ -75,6 +82,8 @@ fun SettingsScreen(
 
     // GDPR Art. 7(3) — consent must be as easy to withdraw as to give.
     var personalizedAds by remember { mutableStateOf(PrivacyConsent.isAdsPersonalizationEnabled()) }
+    // GDPR Art. 21 — usage analytics run on legitimate interest, so the user can object here.
+    var shareAnalytics by remember { mutableStateOf(Analytics.isUserOptedIn()) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showSignOutConfirm by remember { mutableStateOf(false) }
 
@@ -616,6 +625,7 @@ fun SettingsScreen(
                         onCheckedChange = { enabled ->
                             remindersEnabled = enabled
                             MealReminderManager.setMasterEnabled(enabled)
+                            Analytics.track("reminders_toggled", "enabled" to enabled)
                         },
                         colors = SwitchDefaults.colors(
                             checkedThumbColor = Color.White,
@@ -771,6 +781,7 @@ fun SettingsScreen(
                     checked = personalizedAds,
                     onCheckedChange = { enabled ->
                         personalizedAds = enabled
+                        Analytics.track("ads_personalization_changed", "enabled" to enabled)
                         if (enabled) {
                             PrivacyConsent.recordDecision(
                                 acceptTerms = true,
@@ -788,6 +799,60 @@ fun SettingsScreen(
                         uncheckedTrackColor = BorderColor,
                     ),
                 )
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(CardBackground, RoundedCornerShape(12.dp))
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = "Share usage analytics",
+                        style = BrandTypography.SectionTitle,
+                        color = TextColor,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = if (shareAnalytics) {
+                            "On — how you use the app and crash reports help us fix bugs and improve scans. Never your meals, photos or nutrition data."
+                        } else {
+                            "Off — no usage data or crash reports are sent from this device."
+                        },
+                        style = BrandTypography.BodySmall,
+                        color = MutedTextColor,
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Switch(
+                    checked = shareAnalytics,
+                    onCheckedChange = { enabled ->
+                        shareAnalytics = enabled
+                        Analytics.setUserOptedIn(enabled)
+                    },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = CardBackground,
+                        checkedTrackColor = PrimaryAccent,
+                        uncheckedThumbColor = CardBackground,
+                        uncheckedTrackColor = BorderColor,
+                    ),
+                )
+            }
+
+            if (onSendFeedback != null) {
+                OutlinedButton(
+                    onClick = {
+                        Analytics.track("feedback_opened", "source" to "settings")
+                        showFeedback = true
+                    },
+                    modifier = Modifier.fillMaxWidth().height(46.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, PrimaryAccent),
+                ) {
+                    Text("Send feedback or report a problem", fontSize = 13.sp, color = PrimaryAccent)
+                }
             }
 
             // Legal documents — required by Google Play, the App Store, and AdMob policy review.
@@ -817,11 +882,23 @@ fun SettingsScreen(
             if (onDeleteAllData != null) {
                 OutlinedButton(
                     onClick = { showDeleteConfirm = true },
+                    enabled = !deletingAccount,
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = DangerColor),
                 ) {
-                    Text("Delete my account and data", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                    Text(
+                        if (deletingAccount) "Deleting…" else "Delete my account and data",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+                if (deleteAccountMessage != null) {
+                    Text(
+                        text = deleteAccountMessage,
+                        style = BrandTypography.BodySmall,
+                        color = DangerTextStrong
+                    )
                 }
             }
 
@@ -958,11 +1035,18 @@ fun SettingsScreen(
         )
     }
 
+    if (showFeedback && onSendFeedback != null) {
+        FeedbackDialog(
+            defaultEmail = userEmail?.takeIf { '@' in it },
+            onSend = onSendFeedback,
+            onDismiss = { showFeedback = false },
+        )
+    }
+
     if (showDeleteConfirm && onDeleteAllData != null) {
         DeleteDataConfirmDialog(
             onConfirm = {
                 showDeleteConfirm = false
-                PrivacyConsent.clearAll()
                 onDeleteAllData()
             },
             onDismiss = { showDeleteConfirm = false },

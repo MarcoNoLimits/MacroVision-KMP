@@ -1,16 +1,20 @@
-﻿package com.fitcal.shared.telemetry
+package com.fitcal.shared.telemetry
 
+import com.fitcal.shared.data.FakeKeyValueStorage
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/**
- * Phase 6 verification: TelemetryUploader unit tests.
- * Covers user_id attachment, buffer cap of 500, flush-success, and flush-failure-retry with backoff.
- */
 class TelemetryUploaderTest {
 
     @BeforeTest
@@ -24,97 +28,106 @@ class TelemetryUploaderTest {
     }
 
     @Test
-    fun testUserIdAttachedFromAuthSession() = runBlocking {
-        TelemetryUploader.userIdProvider = { "auth-user-uuid-123" }
+    fun testEventCarriesTimestampSessionAndProps() = runBlocking {
+        TelemetryUploader.nowMillis = { 1_760_000_000_000L }
+        TelemetryUploader.sessionIdProvider = { "session-1" }
 
-        TelemetryUploader.recordEventSync(
-            eventType = "scan_completed",
-            properties = """{"duration_ms": 1200}"""
-        )
+        TelemetryUploader.trackSync("scan_succeeded", buildJsonObject { put("latency_ms", 1200) })
 
-        val buffered = TelemetryUploader.getBufferCopy()
-        assertEquals(1, buffered.size)
-        assertEquals("scan_completed", buffered[0].event_type)
-        assertEquals("auth-user-uuid-123", buffered[0].user_id)
+        val event = TelemetryUploader.getBufferCopy().single()
+        assertEquals("scan_succeeded", event.event)
+        assertEquals(1_760_000_000_000L, event.client_ts)
+        assertEquals("session-1", event.session_id)
+        assertEquals(1200, event.props["latency_ms"]!!.jsonPrimitive.int)
     }
 
     @Test
-    fun testBufferCapAt500DropsOldest() = runBlocking {
-        TelemetryUploader.userIdProvider = { "test-user" }
+    fun testNothingRecordedWhenDisabled() = runBlocking {
+        TelemetryUploader.isEnabled = { false }
+        TelemetryUploader.trackSync("app_open")
+        assertEquals(0, TelemetryUploader.getBufferSize())
+    }
 
-        // Insert 505 events (cap is 500)
-        repeat(505) { i ->
-            TelemetryUploader.recordEventSync(
-                eventType = "event_$i",
-                properties = null
-            )
-        }
+    @Test
+    fun testBufferCapDropsOldest() = runBlocking {
+        repeat(TelemetryUploader.BUFFER_CAP + 5) { i -> TelemetryUploader.trackSync("event_$i") }
 
-        assertEquals(500, TelemetryUploader.getBufferSize())
         val buffer = TelemetryUploader.getBufferCopy()
-        // The first 5 events (0..4) should have been dropped
-        assertEquals("event_5", buffer.first().event_type)
-        assertEquals("event_504", buffer.last().event_type)
+        assertEquals(TelemetryUploader.BUFFER_CAP, buffer.size)
+        assertEquals("event_5", buffer.first().event)
+        assertEquals("event_${TelemetryUploader.BUFFER_CAP + 4}", buffer.last().event)
     }
 
     @Test
-    fun testFlushSuccessClearsBuffer() = runBlocking {
-        TelemetryUploader.userIdProvider = { "user-abc" }
-        TelemetryUploader.recordEventSync("event_a")
-        TelemetryUploader.recordEventSync("event_b")
-        TelemetryUploader.recordEventSync("event_c")
+    fun testFlushSendsInBatchesAndClearsBuffer() = runBlocking {
+        TelemetryUploader.appVersion = "1.0"
+        TelemetryUploader.platform = "android"
+        repeat(250) { i -> TelemetryUploader.trackSync("event_$i") }
 
-        var deliveredCount = 0
-        TelemetryUploader.insertHookForTesting = { events ->
-            deliveredCount = events.size
-        }
+        val batches = mutableListOf<AnalyticsBatch>()
+        TelemetryUploader.sender = { batches.add(it); true }
 
-        TelemetryUploader.flushLocked(maxAttempts = 1)
-
-        assertEquals(3, deliveredCount)
-        assertEquals(0, TelemetryUploader.getBufferSize(), "Buffer should be empty after successful flush")
+        assertTrue(TelemetryUploader.flush())
+        assertEquals(listOf(100, 100, 50), batches.map { it.events.size })
+        assertEquals("1.0", batches.first().app_version)
+        assertEquals("android", batches.first().platform)
+        assertEquals(0, TelemetryUploader.getBufferSize())
     }
 
     @Test
-    fun testFlushFailureRetriesAndEventuallySucceeds() = runBlocking {
-        TelemetryUploader.userIdProvider = { "user-abc" }
-        TelemetryUploader.recordEventSync("retry_event")
+    fun testFailedFlushKeepsEventsForNextTime() = runBlocking {
+        TelemetryUploader.trackSync("event_a")
+        TelemetryUploader.trackSync("event_b")
 
-        // Fast zero-delay schedule for unit test
-        TelemetryUploader.retryDelaysForTesting = listOf(0L, 0L, 0L, 0L)
+        TelemetryUploader.sender = { throw RuntimeException("offline") }
+        assertFalse(TelemetryUploader.flush())
+        assertEquals(2, TelemetryUploader.getBufferSize())
 
-        var attempts = 0
-        TelemetryUploader.insertHookForTesting = {
-            attempts++
-            if (attempts < 3) {
-                throw RuntimeException("Simulated transient network failure on attempt $attempts")
-            }
-            // Attempt 3 succeeds
-        }
-
-        TelemetryUploader.flushLocked(maxAttempts = 4)
-
-        assertEquals(3, attempts, "Should have retried until attempt 3 succeeded")
-        assertEquals(0, TelemetryUploader.getBufferSize(), "Buffer should be empty after successful retry")
+        var delivered = 0
+        TelemetryUploader.sender = { delivered += it.events.size; true }
+        assertTrue(TelemetryUploader.flush())
+        assertEquals(2, delivered)
+        assertEquals(0, TelemetryUploader.getBufferSize())
     }
 
     @Test
-    fun testFlushCompleteFailureDropsBatchWithoutCrashing() = runBlocking {
-        TelemetryUploader.userIdProvider = { "user-abc" }
-        TelemetryUploader.recordEventSync("failing_event")
+    fun testEventsSurviveRestartViaStorage() = runBlocking {
+        val storage = FakeKeyValueStorage()
+        TelemetryUploader.storage = storage
+        TelemetryUploader.trackSync("photo_captured")
+        TelemetryUploader.trackSync("scan_started")
 
-        TelemetryUploader.retryDelaysForTesting = listOf(0L, 0L, 0L, 0L)
+        // Simulate process death: in-memory state gone, same storage.
+        TelemetryUploader.resetForTesting()
+        TelemetryUploader.storage = storage
+        TelemetryUploader.trackSync("app_open")
 
-        var attempts = 0
-        TelemetryUploader.insertHookForTesting = {
-            attempts++
-            throw RuntimeException("Permanent network outage")
-        }
+        assertEquals(
+            listOf("photo_captured", "scan_started", "app_open"),
+            TelemetryUploader.getBufferCopy().map { it.event },
+        )
+    }
 
-        // Must not throw an unhandled exception
-        TelemetryUploader.flushLocked(maxAttempts = 4)
+    @Test
+    fun testFlushWhileDisabledDropsPendingEvents() = runBlocking {
+        val storage = FakeKeyValueStorage()
+        TelemetryUploader.storage = storage
+        TelemetryUploader.trackSync("app_open")
 
-        assertEquals(4, attempts, "Should have exhausted all 4 attempts")
-        assertEquals(0, TelemetryUploader.getBufferSize(), "Buffer should be cleared after max attempts exceeded")
+        TelemetryUploader.isEnabled = { false }
+        var sent = false
+        TelemetryUploader.sender = { sent = true; true }
+
+        assertTrue(TelemetryUploader.flush())
+        assertFalse(sent, "Opted-out events must never be uploaded")
+        assertEquals(0, TelemetryUploader.getBufferSize())
+    }
+
+    @Test
+    fun testDiagnosticMessagesAreEscapedSafely() = runBlocking {
+        TelemetryUploader.trackDiagnostic("ERROR", "VLM", "bad \"quote\" \\ slash", details = null)
+        withTimeout(2_000) { while (TelemetryUploader.getBufferSize() == 0) delay(10) }
+        val props = TelemetryUploader.getBufferCopy().single().props
+        assertEquals("bad \"quote\" \\ slash", props["message"]!!.jsonPrimitive.content)
     }
 }

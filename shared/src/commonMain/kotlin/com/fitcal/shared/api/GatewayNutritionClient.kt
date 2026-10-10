@@ -1,6 +1,7 @@
 package com.fitcal.shared.api
 
 import com.fitcal.shared.model.NutritionResponse
+import com.fitcal.shared.telemetry.AnalyticsBatch
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.HttpTimeout
@@ -66,6 +67,20 @@ data class RewardResponse(
     val bonus: Int,
     val granted: Int = 0
 )
+
+/** Body of POST /v1/feedback. `scan_accuracy` needs [rating]; other kinds need [message]. */
+@Serializable
+data class FeedbackRequest(
+    val kind: String,
+    val rating: Int? = null,
+    val message: String? = null,
+    val contact_email: String? = null,
+    val context: kotlinx.serialization.json.JsonObject = kotlinx.serialization.json.JsonObject(emptyMap()),
+    val app_version: String? = null,
+    val platform: String? = null,
+)
+
+enum class FeedbackSendResult { Sent, RateLimited, Failed }
 
 /** Response shape of POST /v1/account/delete. */
 @Serializable
@@ -265,6 +280,53 @@ class GatewayNutritionClient(
             body.bonus
         } catch (_: Exception) {
             null
+        }
+    }
+
+    /**
+     * Uploads an analytics batch to POST /v1/events. Returns true once the gateway
+     * accepted it. Never re-authenticates: analytics must not create a session on its
+     * own, so a missing or rejected token just leaves the events queued.
+     */
+    suspend fun sendEvents(batch: AnalyticsBatch): Boolean {
+        val jwt = jwtProvider() ?: return false
+        return try {
+            val response = httpClient.post("$gatewayUrl/v1/events") {
+                contentType(ContentType.Application.Json)
+                header("Authorization", "Bearer $jwt")
+                setBody(batch)
+            }
+            response.status.isSuccess()
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /** Sends user feedback (Settings form or a thumbs up/down on an estimate). */
+    suspend fun submitFeedback(request: FeedbackRequest): FeedbackSendResult {
+        return try {
+            var jwt = jwtProvider()
+            if (jwt == null && reAuthenticator != null) {
+                try {
+                    reAuthenticator.invoke()
+                    jwt = jwtProvider()
+                } catch (_: Throwable) {
+                    // fall through
+                }
+            }
+            if (jwt == null) return FeedbackSendResult.Failed
+            val response = httpClient.post("$gatewayUrl/v1/feedback") {
+                contentType(ContentType.Application.Json)
+                header("Authorization", "Bearer $jwt")
+                setBody(request)
+            }
+            when {
+                response.status == HttpStatusCode.TooManyRequests -> FeedbackSendResult.RateLimited
+                response.status.isSuccess() -> FeedbackSendResult.Sent
+                else -> FeedbackSendResult.Failed
+            }
+        } catch (_: Exception) {
+            FeedbackSendResult.Failed
         }
     }
 

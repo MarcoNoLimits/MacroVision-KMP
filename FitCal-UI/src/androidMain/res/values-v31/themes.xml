@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+ system splash: slate-900 ground + the bare macro F, so the
+         in-app launch animation (ui/launch/LaunchAnimation.kt) picks up from the
+         exact same frame. -->
+    <style name="Theme.FitCal" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowActivityTransitions">true</item>
+        <item name="android:windowSplashScreenBackground">#0F172A</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+    </style>
+</resources>

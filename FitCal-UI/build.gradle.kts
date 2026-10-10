@@ -56,6 +56,7 @@ kotlin {
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.androidx.activity.compose)
             implementation(libs.ktor.client.okhttp)
+            implementation(libs.sentry.android.core)
             
             // CameraX
             implementation(libs.camerax.core)
@@ -139,6 +140,10 @@ configure<com.android.build.api.dsl.ApplicationExtension> {
         // Optional: Google sign-in is hidden until the OAuth web client ID is configured.
         val googleWebClientId = properties.getProperty("GOOGLE_WEB_CLIENT_ID") ?: ""
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")
+
+        // Optional: crash reporting stays off until a Sentry DSN is configured.
+        val sentryDsn = properties.getProperty("SENTRY_DSN") ?: ""
+        buildConfigField("String", "SENTRY_DSN", "\"$sentryDsn\"")
     }
 
     

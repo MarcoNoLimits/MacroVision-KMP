@@ -10,7 +10,7 @@ This file is the authoritative instruction set for any agent (AI or human) worki
 
 - **Modules**: `:shared` (HTTP clients, models, VLM logic), `:FitCal-UI` (Compose Multiplatform UI + ads + quotas), `iosApp/` (native iOS wrapper).
 - **Release scope**: **Android only for v1.** iOS code stays in the repo but is not a release target.
-- **Backend**: Supabase (Postgres + RLS, Auth). The only AI gateway is the Edge Function `supabase/functions/analyze-meal`; it holds the paid provider keys. (The old Cloudflare Worker was removed.)
+- **Backend**: Supabase (Postgres + RLS, Auth). The only AI gateway is the Edge Function `supabase/functions/analyze-meal`; it holds the paid provider keys. (The old Cloudflare Worker was removed.) All FitCal tables and RPCs live in schema `fitcal` (renamed from `fitter` in migration 0011); analytics and feedback are documented in `ANALYTICS.md`.
 - **VLM Pipeline** (inside the gateway): Gemini → OpenRouter (Qwen VL) → Groq (`qwen/qwen3.8-27b`) failover.
 - **Monetization state**: Google AdMob only (banners, forced interstitial at quota, rewarded); test IDs in debug builds. Daily scan quota system live (`ScanQuotaManager`).
 

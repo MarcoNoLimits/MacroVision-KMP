@@ -1,4 +1,4 @@
-﻿package com.fitcal.app
+package com.fitcal.app
 
 // Gateway URL (Supabase Edge Function — VLM keys stored in Supabase Vault, never in the app)
 expect val gatewayUrl: String
@@ -31,7 +31,23 @@ expect fun compressImage(imageBytes: ByteArray): ByteArray
 
 expect val isDebugBuild: Boolean
 
+// App version name and platform tag, attached to every analytics batch.
+expect val appVersionName: String
+expect val platformName: String
+
 expect fun getPlatformAdManager(): com.fitcal.app.ads.AdManager
+
+/**
+ * Crash reporting (Sentry on Android). Enabled only after privacy consent and while
+ * the user keeps "Share usage analytics" on; disabling closes the SDK immediately.
+ */
+expect fun setCrashReportingEnabled(enabled: Boolean)
+
+/** Pseudonymous Supabase user ID, so a crash can be matched to that user's analytics. */
+expect fun setCrashReportingUser(userId: String?)
+
+/** Reports a caught exception. No-op while crash reporting is disabled. */
+expect fun reportNonFatal(throwable: Throwable, tag: String)
 
 expect fun syncPlatformMealReminders(
     enabled: Boolean,

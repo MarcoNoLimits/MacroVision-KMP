@@ -36,7 +36,8 @@ import com.fitcal.app.telemetry.DiagnosticsCrashHook
 import io.ktor.util.encodeBase64
 import com.fitcal.app.ScanReadiness
 import com.fitcal.app.getScanBlockedReason
-import com.fitcal.shared.telemetry.TelemetryUploader
+import com.fitcal.app.getCurrentEpochMillis
+import com.fitcal.app.telemetry.Analytics
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -59,13 +60,12 @@ fun CameraScreen(
 ) {
     val coroutineScope = rememberCoroutineScope()
 
-    LaunchedEffect(scanReadiness) {
+    LaunchedEffect(scanReadiness, scansRemaining) {
         val reason = getScanBlockedReason(scanReadiness)
+            ?: if (scansRemaining <= 0) "quota_exhausted" else null
         if (reason != null) {
-            TelemetryUploader.recordEvent(
-                eventType = "scan_blocked_reason",
-                properties = """{"reason":"$reason"}"""
-            )
+            Analytics.track("scan_blocked", "reason" to reason)
+            if (reason == "quota_exhausted") Analytics.track("quota_exhausted", "can_create_account" to (onCreateAccount != null))
         }
     }
 
@@ -74,6 +74,44 @@ fun CameraScreen(
     var currentCapturedBytes by remember { mutableStateOf<ByteArray?>(null) }
     // F3.3: isCancelled guards the result callback so a cancelled state doesn't later navigate
     var isCancelled by remember { mutableStateOf(false) }
+
+    // Every AI request goes through here so the scan funnel is measured the same way
+    // on all three paths (plain, with interstitial, resend).
+    suspend fun analyzeWithTracking(bytes: ByteArray, attempt: String): String {
+        val startedAt = getCurrentEpochMillis()
+        Analytics.track(
+            "scan_started",
+            "attempt" to attempt,
+            "with_ad" to playAdDuringScan,
+            "image_kb" to bytes.size / 1024,
+            "plate_size_set" to (plateSizeInches != null),
+        )
+        try {
+            val response = if (isMockMode) {
+                delay(2000)
+                Json { ignoreUnknownKeys = true }.decodeFromString(NutritionResponse.serializer(), getMockJson())
+            } else {
+                apiClient.analyzeMealImage(bytes.encodeBase64(), plateSizeInches)
+            }
+            Analytics.track(
+                "scan_succeeded",
+                "attempt" to attempt,
+                "latency_ms" to getCurrentEpochMillis() - startedAt,
+                "items" to response.items.size,
+                "low_confidence_items" to response.items.count { it.confidence.equals("low", ignoreCase = true) },
+                "no_food" to response.items.isEmpty(),
+            )
+            return Json.encodeToString(NutritionResponse.serializer(), response)
+        } catch (e: Exception) {
+            Analytics.track(
+                "scan_failed",
+                "attempt" to attempt,
+                "latency_ms" to getCurrentEpochMillis() - startedAt,
+                "error" to scanErrorClass(e),
+            )
+            throw e
+        }
+    }
 
     val deliverSuccessfulScan: (String) -> Unit = { responseJson ->
         onScanConsumed()
@@ -88,14 +126,7 @@ fun CameraScreen(
             isCancelled = false
             coroutineScope.launch {
                 try {
-                    val responseJson = if (isMockMode) {
-                        delay(2000)
-                        getMockJson()
-                    } else {
-                        val base64 = bytes.encodeBase64()
-                        val response = apiClient.analyzeMealImage(base64, plateSizeInches)
-                        Json.encodeToString(NutritionResponse.serializer(), response)
-                    }
+                    val responseJson = analyzeWithTracking(bytes, attempt = "resend")
                     if (!isCancelled) deliverSuccessfulScan(responseJson)
                 } catch (e: Exception) {
                     val err = e.message ?: "Unknown API Error"
@@ -109,9 +140,12 @@ fun CameraScreen(
 
     val watchRewardVideoForMoreScans: (Boolean) -> Unit = { autoRetryPhoto ->
         var rewarded = false
+        val source = if (autoRetryPhoto) "scan_error" else "quota_wall"
+        Analytics.track("rewarded_ad_requested", "source" to source)
         adManager.showRewardedScanUnlockAd(
             onRewarded = {
                 rewarded = true
+                Analytics.track("rewarded_ad_earned", "source" to source)
                 coroutineScope.launch {
                     onBonusScansEarned?.invoke()
                     if (autoRetryPhoto && currentCapturedBytes != null) {
@@ -122,6 +156,7 @@ fun CameraScreen(
             onDismissed = {
                 if (!rewarded) {
                     // User closed ad early; stay on prompt so they can try again or go back
+                    Analytics.track("rewarded_ad_closed_early", "source" to source)
                 }
             }
         )
@@ -272,6 +307,11 @@ fun CameraScreen(
                 onPhotoCaptured = { imageBytes ->
                     isCancelled = false
                     val compressedBytes = compressImage(imageBytes)
+                    Analytics.track(
+                        "photo_captured",
+                        "raw_kb" to imageBytes.size / 1024,
+                        "compressed_kb" to compressedBytes.size / 1024,
+                    )
                     currentCapturedBytes = compressedBytes
                     onPhotoCaptured(compressedBytes)
                     isAnalyzing = true
@@ -286,14 +326,7 @@ fun CameraScreen(
                         // 1. Kick off AI analysis in background
                         coroutineScope.launch {
                             try {
-                                val responseJson = if (isMockMode) {
-                                    delay(2000)
-                                    getMockJson()
-                                } else {
-                                    val base64 = compressedBytes.encodeBase64()
-                                    val response = apiClient.analyzeMealImage(base64, plateSizeInches)
-                                    Json.encodeToString(NutritionResponse.serializer(), response)
-                                }
+                                val responseJson = analyzeWithTracking(compressedBytes, attempt = "first")
                                 apiResultJson = responseJson
                                 if (isAdFinished && !isCancelled && !resultDelivered) {
                                     resultDelivered = true
@@ -325,14 +358,7 @@ fun CameraScreen(
                     } else {
                         coroutineScope.launch {
                             try {
-                                val responseJson = if (isMockMode) {
-                                    delay(2000)
-                                    getMockJson()
-                                } else {
-                                    val base64 = compressedBytes.encodeBase64()
-                                    val response = apiClient.analyzeMealImage(base64, plateSizeInches)
-                                    Json.encodeToString(NutritionResponse.serializer(), response)
-                                }
+                                val responseJson = analyzeWithTracking(compressedBytes, attempt = "first")
                                 if (!isCancelled) deliverSuccessfulScan(responseJson)
                             } catch (e: Exception) {
                                 val err = e.message ?: "Unknown API Error"
@@ -396,6 +422,7 @@ fun CameraScreen(
                     // F3.3: Cancel affordance — tapping closes the ad path, discards in-flight request
                     OutlinedButton(
                         onClick = {
+                            Analytics.track("scan_cancelled")
                             isCancelled = true // guard: result callback won't fire
                             isAnalyzing = false
                             currentCapturedBytes = null
@@ -664,5 +691,18 @@ private fun ErrorCard(
                 }
             }
         }
+    }
+}
+
+/** Short error class for analytics; never the raw message (it can contain server text). */
+internal fun scanErrorClass(e: Throwable): String {
+    val msg = e.message.orEmpty().lowercase()
+    return when {
+        "quota" in msg -> "quota"
+        "401" in msg || "authentication" in msg -> "auth"
+        "timeout" in msg || "timed out" in msg -> "timeout"
+        "unable to resolve host" in msg || "failed to connect" in msg || "network" in msg -> "network"
+        "gateway error (" in msg -> "http_" + msg.substringAfter("gateway error (").take(3)
+        else -> e::class.simpleName ?: "unknown"
     }
 }

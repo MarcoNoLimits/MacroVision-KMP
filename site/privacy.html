@@ -81,7 +81,12 @@
       <li>Nutrition estimates generated from those photographs</li>
       <li>Your account email address, if you choose to create an account (the app works without one)</li>
       <li>Water intake, weight, and meal log entries you record</li>
-      <li>Technical data: device identifiers, crash logs, and diagnostic events</li>
+      <li>App usage events: which screens and features you use, scan timing and errors, and how
+      much you changed an estimate before logging it (counts only, never meal names, nutrition
+      values or photos)</li>
+      <li>Feedback you choose to send: your message, an optional reply email, and thumbs up/down
+      ratings of estimates</li>
+      <li>Technical data: app version, device identifiers, crash reports, and diagnostic events</li>
       <li>Advertising identifiers and ad interaction events (see <em>Advertising</em> below)</li>
     </ul>
   </section>
@@ -99,7 +104,9 @@
     <ul>
       <li><strong>Consent</strong> (Art. 6(1)(a)) — meal photo analysis and personalized advertising</li>
       <li><strong>Contract</strong> (Art. 6(1)(b)) — providing the app's core functionality</li>
-      <li><strong>Legitimate interests</strong> (Art. 6(1)(f)) — crash diagnostics and security, balanced against your rights</li>
+      <li><strong>Legitimate interests</strong> (Art. 6(1)(f)) — usage analytics, crash diagnostics and
+      security, balanced against your rights. You can object at any time with Settings → Privacy →
+      <em>Share usage analytics</em>.</li>
     </ul>
     <p>For special-category processing we rely on your explicit consent under Art. 9(2)(a).</p>
   </section>
@@ -107,8 +114,9 @@
   <section>
     <h2>Who processes your data</h2>
     <p>Our backend runs on Supabase, hosted in the EU (Ireland). Photographs are forwarded to third-party AI providers —
-    OpenRouter, Google, and Groq — solely to generate estimates. Account data is stored in
-    Supabase. Payments are handled by RevenueCat and the relevant app store; we never see your
+    OpenRouter, Google, and Groq — solely to generate estimates. Account data and usage events
+    are stored in Supabase. Crash reports are processed by Sentry. Account emails (sign-up and password codes) are sent
+    through Resend. Payments are handled by RevenueCat and the relevant app store; we never see your
     full card details.</p>
   </section>
 
@@ -130,15 +138,28 @@
   <section>
     <h2>How long we keep data</h2>
     <p>Meal photographs and nutrition logs are retained until you delete them or close your
-    account. Cached analysis results are retained for up to 30 days. Crash and diagnostic logs
-    are retained for up to 90 days.</p>
+    account. Our servers do not keep a separate cache of analysis results. App usage events
+    are retained for up to 13 months, feedback for up to 24 months. Crash and diagnostic logs are
+    retained for up to 90 days.</p>
+  </section>
+
+  <section id="delete">
+    <h2>Delete your account and data</h2>
+    <p><strong>In the app:</strong> open FitCal → Settings → Privacy → <em>Delete my account and
+    data</em>, then confirm. Your meals, photos, water and weight logs, scan history and account
+    are permanently deleted from our servers right away, and the app's local data is cleared.</p>
+    <p><strong>Without the app:</strong> email us from the address on your account (or, for a guest
+    profile, tell us roughly when you used the app) with the subject “Delete my FitCal account”.
+    We delete the account and all associated data within 30 days and confirm by reply.</p>
+    <p>Nothing is kept after deletion, except where the law requires us to retain a record.</p>
   </section>
 
   <section>
     <h2>Your rights</h2>
     <ul>
       <li>Withdraw consent for personalized ads — Settings → Privacy</li>
-      <li>Delete your account and all associated data — Settings → Privacy</li>
+      <li>Turn off usage analytics and crash reports — Settings → Privacy → <em>Share usage analytics</em></li>
+      <li>Delete your account and all associated data — Settings → Privacy, or <a href="#delete">see how to delete without the app</a></li>
       <li>Request a copy of the data we hold about you</li>
       <li>Correct inaccurate information</li>
       <li>Object to processing, and restrict it</li>
@@ -167,7 +188,7 @@
   </section>
 
   <footer>
-    <p>Questions about this policy? Contact <a href="mailto:privacy@fitcal.app">privacy@fitcal.app</a>.</p>
+    <p>Questions about this policy? Contact <a href="mailto:fitcal@tecaa.xyz">fitcal@tecaa.xyz</a>.</p>
   </footer>
 
 </main>

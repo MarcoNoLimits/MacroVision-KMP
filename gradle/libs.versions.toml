@@ -15,6 +15,7 @@ ktor = "3.4.3"
 material3 = "1.11.0-alpha07"
 camerax = "1.4.1"
 playServicesAds = "23.6.0"
+sentry = "8.58.0"
 supabase = "3.8.0"
 
 [libraries]
@@ -23,6 +24,8 @@ supabase-compose-auth = { module = "io.github.jan-tennert.supabase:compose-auth"
 supabase-postgrest = { module = "io.github.jan-tennert.supabase:postgrest-kt", version.ref = "supabase" }
 supabase-realtime = { module = "io.github.jan-tennert.supabase:realtime-kt", version.ref = "supabase" }
 play-services-ads = { module = "com.google.android.gms:play-services-ads", version.ref = "playServicesAds" }
+# Crash/ANR reporting only: no session replay, no screenshots (meal photos must never leave via Sentry).
+sentry-android-core = { module = "io.sentry:sentry-android-core", version.ref = "sentry" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activity" }
 androidx-lifecycle-runtimeCompose = { group = "org.jetbrains.androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "androidx-lifecycle" }
 camerax-core = { group = "androidx.camera", name = "camera-core", version.ref = "camerax" }

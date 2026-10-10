@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import com.fitcal.app.ads.AndroidAdManager
 import com.fitcal.app.privacy.PrivacyConsent
+import com.fitcal.app.ui.launch.LaunchAnimationHost
 import com.google.android.gms.ads.MobileAds
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
@@ -20,7 +21,9 @@ class MainActivity : ComponentActivity() {
         AndroidAdManager.currentActivityRef = WeakReference(this)
 
         setContent {
-            App()
+            LaunchAnimationHost {
+                App()
+            }
         }
 
         // ── Ad initialization is DEFERRED until consent is resolved. ──

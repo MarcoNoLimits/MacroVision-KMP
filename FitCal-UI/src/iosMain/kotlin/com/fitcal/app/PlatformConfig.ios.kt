@@ -41,6 +41,14 @@ actual val gatewayUrl: String get() = PlatformConfig.gatewayUrl
 actual val supabaseUrl: String get() = PlatformConfig.supabaseUrl
 actual val supabaseAnonKey: String get() = PlatformConfig.supabaseAnonKey
 actual val isDebugBuild: Boolean = true
+actual val appVersionName: String
+    get() = platform.Foundation.NSBundle.mainBundle.infoDictionary?.get("CFBundleShortVersionString") as? String ?: "unknown"
+actual val platformName: String get() = "ios"
+
+// iOS is not a v1 release target; crash reporting is Android-only for now.
+actual fun setCrashReportingEnabled(enabled: Boolean) = Unit
+actual fun setCrashReportingUser(userId: String?) = Unit
+actual fun reportNonFatal(throwable: Throwable, tag: String) = Unit
 actual val googleWebClientId: String get() = PlatformConfig.googleWebClientId
 
 // compose-auth only signs in with Google natively on Android; iOS offers Sign in with Apple.

@@ -34,7 +34,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import coil3.compose.AsyncImage
+import com.fitcal.app.getCurrentEpochMillis
 import com.fitcal.app.getCurrentTimeString
+import com.fitcal.app.telemetry.Analytics
+import com.fitcal.app.telemetry.summarizeCorrections
 import com.fitcal.app.ui.components.FitCalTextField
 import com.fitcal.app.ui.components.PressableBox
 import com.fitcal.app.ui.screens.review.components.EditableFoodItem
@@ -42,6 +45,7 @@ import com.fitcal.app.ui.screens.review.components.MacroGridCard
 import com.fitcal.app.ui.screens.review.components.WeightInputPill
 import com.fitcal.app.ui.theme.*
 import com.fitcal.app.ui.screens.auth.SignInSuggestionCard
+import com.fitcal.app.ui.screens.feedback.ScanAccuracyPrompt
 import com.fitcal.shared.api.FoodDatabase
 import com.fitcal.shared.api.FoodDbEntry
 import com.fitcal.shared.api.NutritionClient
@@ -60,6 +64,7 @@ fun ResultScreen(
     onSignInSuggestionShown: () -> Unit = {},
     onSignInSuggestionDismissed: () -> Unit = {},
     onCreateAccount: () -> Unit = {},
+    onRateEstimate: (positive: Boolean, reasons: List<String>) -> Unit = { _, _ -> },
 ) {
     val scrollState = rememberScrollState()
 
@@ -84,6 +89,27 @@ fun ResultScreen(
     var showSuccessDialog by remember { mutableStateOf(false) }
     var activeSwapIndex by remember { mutableStateOf<Int?>(null) }
     var showAddDbItemDialog by remember { mutableStateOf(false) }
+
+    // Analytics: what the user changed before logging, and whether they logged at all.
+    val reviewOpenedAt = remember(data) { getCurrentEpochMillis() }
+    var swapCount by remember(data) { mutableStateOf(0) }
+    var libraryAddCount by remember(data) { mutableStateOf(0) }
+    var customAddCount by remember(data) { mutableStateOf(0) }
+    var recalcCount by remember(data) { mutableStateOf(0) }
+    var mealLogged by remember(data) { mutableStateOf(false) }
+    val currentItemCount by rememberUpdatedState(editableItems.size)
+    DisposableEffect(data) {
+        onDispose {
+            if (!mealLogged) {
+                Analytics.track(
+                    "review_abandoned",
+                    "items_ai" to data.items.size,
+                    "items_final" to currentItemCount,
+                    "review_seconds" to (getCurrentEpochMillis() - reviewOpenedAt) / 1000,
+                )
+            }
+        }
+    }
 
     val isEdited = remember(editableItems.map { it.name }) {
         if (editableItems.size != data.items.size) {
@@ -418,6 +444,10 @@ fun ResultScreen(
                     modifier = Modifier.padding(24.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    if (data.items.isNotEmpty()) {
+                        ScanAccuracyPrompt(onRate = onRateEstimate)
+                    }
+
                     if (isEdited) {
                         var isRecalculating by remember { mutableStateOf(false) }
                         val coroutineScope = rememberCoroutineScope()
@@ -426,6 +456,8 @@ fun ResultScreen(
                         Button(
                             onClick = {
                                 isRecalculating = true
+                                recalcCount++
+                                val recalcStartedAt = getCurrentEpochMillis()
                                 coroutineScope.launch {
                                     try {
                                         val itemsList = editableItems.map {
@@ -446,7 +478,17 @@ fun ResultScreen(
                                             )
                                         })
                                         recalculateError = null
+                                        Analytics.track(
+                                            "recalculate_succeeded",
+                                            "items" to itemsList.size,
+                                            "latency_ms" to getCurrentEpochMillis() - recalcStartedAt,
+                                        )
                                     } catch (e: Exception) {
+                                        Analytics.track(
+                                            "recalculate_failed",
+                                            "latency_ms" to getCurrentEpochMillis() - recalcStartedAt,
+                                            "error" to (e::class.simpleName ?: "Exception"),
+                                        )
                                         recalculateError = e.message ?: "Recalculation failed"
                                     } finally {
                                         isRecalculating = false
@@ -486,6 +528,27 @@ fun ResultScreen(
 
                     Button(
                         onClick = {
+                            val corrections = summarizeCorrections(
+                                original = data.items,
+                                final = editableItems.map { it.name to (it.currentWeightStr.toIntOrNull() ?: 0) },
+                            )
+                            Analytics.track(
+                                "meal_logged",
+                                "edited" to corrections.edited,
+                                "items_ai" to corrections.itemsAi,
+                                "items_final" to corrections.itemsFinal,
+                                "items_removed" to corrections.itemsRemoved,
+                                "items_added" to corrections.itemsAdded,
+                                "items_swapped" to swapCount,
+                                "library_adds" to libraryAddCount,
+                                "custom_adds" to customAddCount,
+                                "weights_changed" to corrections.weightsChanged,
+                                "weight_change_pct" to corrections.weightChangePct,
+                                "low_confidence_items" to corrections.lowConfidenceItems,
+                                "recalculations" to recalcCount,
+                                "review_seconds" to (getCurrentEpochMillis() - reviewOpenedAt) / 1000,
+                            )
+                            mealLogged = true
                             onMealLogged(data.meal_name, totalCalories, totalProtein, totalCarbs, totalFat)
                             showSuccessDialog = true
                         },
@@ -634,6 +697,7 @@ fun ResultScreen(
                                         confidence = "high"
                                     )
                                     editableItems.add(item)
+                                    customAddCount++
                                     showAddItemDialog = false
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = PrimaryAccent)
@@ -814,6 +878,7 @@ fun ResultScreen(
                                     PressableBox(
                                         onTap = {
                                             val currentItem = editableItems[swapIndex]
+                                            swapCount++
                                             editableItems[swapIndex] = currentItem.copy(
                                                 name = food.name,
                                                 calPerGram = (food.calories / 100.0).toFloat(),
@@ -991,6 +1056,7 @@ fun ResultScreen(
                                             confidence = "high"
                                         )
                                         editableItems.add(newItem)
+                                        libraryAddCount++
                                         showAddDbItemDialog = false
                                     }
                                 },

@@ -251,4 +251,39 @@ class GatewayNutritionClientTest {
             "Expected daily_allowance:5 in request body, got: $capturedBodyText"
         )
     }
+
+    @Test
+    fun testSubmitFeedbackPostsToFeedbackRouteAndMapsStatuses() = runBlocking {
+        var status = HttpStatusCode.OK
+        var lastPath = ""
+        var lastBody = ""
+        val client = createMockHttpClient { request ->
+            lastPath = request.url.encodedPath
+            lastBody = (request.body as io.ktor.http.content.TextContent).text
+            respond("""{"id":1}""", status, headersOf(HttpHeaders.ContentType, "application/json"))
+        }
+        val gateway = GatewayNutritionClient(
+            gatewayUrl = "https://gw.test/functions/v1/analyze-meal",
+            jwtProvider = { "jwt" },
+            client = client,
+        )
+        val request = FeedbackRequest(kind = "bug", message = "Camera froze")
+
+        assertEquals(FeedbackSendResult.Sent, gateway.submitFeedback(request))
+        assertTrue(lastPath.endsWith("/v1/feedback"))
+        assertTrue(lastBody.contains("\"kind\":\"bug\""))
+
+        status = HttpStatusCode.TooManyRequests
+        assertEquals(FeedbackSendResult.RateLimited, gateway.submitFeedback(request))
+
+        status = HttpStatusCode.InternalServerError
+        assertEquals(FeedbackSendResult.Failed, gateway.submitFeedback(request))
+    }
+
+    @Test
+    fun testSubmitFeedbackWithoutSessionFails() = runBlocking {
+        val client = createMockHttpClient { error("must not be called without a token") }
+        val gateway = GatewayNutritionClient(gatewayUrl = "https://gw.test", jwtProvider = { null }, client = client)
+        assertEquals(FeedbackSendResult.Failed, gateway.submitFeedback(FeedbackRequest(kind = "idea", message = "x")))
+    }
 }

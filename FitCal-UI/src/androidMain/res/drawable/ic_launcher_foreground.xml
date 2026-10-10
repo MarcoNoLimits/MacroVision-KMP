@@ -1,22 +1,33 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Macro F mark: emerald stem, carbs-blue top arm, fat-amber middle arm, protein dot.
+     Geometry is mirrored in ui/launch/LaunchAnimation.kt (MacroFMark) — keep both in sync. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Outer subtle glowing ring -->
-    <path
-        android:strokeColor="#3310B981"
-        android:strokeWidth="3"
-        android:pathData="M54,20 A34,34 0 1,1 53.99,20" />
-    
-    <!-- Central Brand "F" and Calorie/Macro Plate Arc -->
+    <!-- Stem: x34 y28 13x52, r6.5 -->
     <path
         android:fillColor="#10B981"
-        android:pathData="M38,32 H68 C71.3,32 74,34.7 74,38 C74,41.3 71.3,44 68,44 H46 V50 H62 C64.8,50 67,52.2 67,55 C67,57.8 64.8,60 62,60 H46 V72 C46,74.2 44.2,76 42,76 C39.8,76 38,74.2 38,72 Z" />
+        android:pathData="M40.5,28 A6.5,6.5 0 0,1 47,34.5 V73.5 A6.5,6.5 0 0,1 34,73.5 V34.5 A6.5,6.5 0 0,1 40.5,28 Z" />
 
-    <!-- Macro Sparkle Dot -->
+    <!-- Top arm (carbs): x34 y28 42x13, r6.5 -->
+    <path
+        android:fillColor="#60A5FA"
+        android:pathData="M40.5,28 H69.5 A6.5,6.5 0 0,1 69.5,41 H40.5 A6.5,6.5 0 0,1 40.5,28 Z" />
+
+    <!-- Middle arm (fat): x34 y48 30x13, r6.5 -->
+    <path
+        android:fillColor="#FBBF24"
+        android:pathData="M40.5,48 H57.5 A6.5,6.5 0 0,1 57.5,61 H40.5 A6.5,6.5 0 0,1 40.5,48 Z" />
+
+    <!-- Stem cap over the top-left joint so the stem reads in front -->
+    <path
+        android:fillColor="#10B981"
+        android:pathData="M40.5,28 A6.5,6.5 0 1,1 40.49,28 Z" />
+
+    <!-- Protein dot -->
     <path
         android:fillColor="#34D399"
-        android:pathData="M70,68 A4,4 0 1,1 69.99,68" />
+        android:pathData="M72,68 A6,6 0 1,1 71.99,68 Z" />
 </vector>

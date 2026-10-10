@@ -20,6 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.fitcal.app.ads.AdManager
 import com.fitcal.app.ads.ScanQuotaManager
+import com.fitcal.app.telemetry.Analytics
 import com.fitcal.app.ui.theme.*
 
 // ADS & PERKS — the quarantine home for every monetization surface.
@@ -144,8 +145,10 @@ fun MonetizationScreen(
 
                 OutlinedButton(
                     onClick = {
+                        Analytics.track("rewarded_ad_requested", "source" to "perks_screen")
                         adManager.showRewardedScanUnlockAd(
                             onRewarded = {
+                                Analytics.track("rewarded_ad_earned", "source" to "perks_screen")
                                 ScanQuotaManager.addBonusScans(currentDateKey, 2)
                                 onScansUpdated()
                             },

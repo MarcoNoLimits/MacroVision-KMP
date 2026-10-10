@@ -1,4 +1,4 @@
-﻿package com.fitcal.app.telemetry
+package com.fitcal.app.telemetry
 
 import com.fitcal.app.data.PreferenceKeyValueStorage
 import com.fitcal.app.getCurrentEpochMillis
@@ -92,6 +92,11 @@ object DiagnosticsCrashHook {
         // Persistent sink for errors & fatal events
         if (level == DiagnosticLevel.ERROR || level == DiagnosticLevel.FATAL) {
             persistErrorEntry(entry)
+            // Unexpected exceptions go to Sentry with a stack trace. AI-provider and ad
+            // failures are expected at some rate and are measured through analytics instead.
+            if (throwable != null && tag != "VLM" && tag != "AdMob") {
+                com.fitcal.app.reportNonFatal(throwable, tag)
+            }
             com.fitcal.shared.telemetry.TelemetryUploader.trackDiagnostic(
                 level = level.name,
                 tag = tag,

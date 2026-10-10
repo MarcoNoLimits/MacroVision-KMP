@@ -131,7 +131,7 @@ class OpenRouterClient(
 
         val httpResponse = client.post("https://openrouter.ai/api/v1/chat/completions") {
             header(HttpHeaders.Authorization, "Bearer $apiKey")
-            header("HTTP-Referer", "https://fitcal.app")
+            header("HTTP-Referer", "https://fitcal.tecaa.xyz")
             header("X-Title", "FitCal")
             contentType(ContentType.Application.Json)
             setBody(request)
@@ -198,7 +198,7 @@ class OpenRouterClient(
 
         val httpResponse = client.post("https://openrouter.ai/api/v1/chat/completions") {
             header(HttpHeaders.Authorization, "Bearer $apiKey")
-            header("HTTP-Referer", "https://fitcal.app")
+            header("HTTP-Referer", "https://fitcal.tecaa.xyz")
             header("X-Title", "FitCal")
             contentType(ContentType.Application.Json)
             setBody(request)

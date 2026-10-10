@@ -14,6 +14,7 @@ import com.fitcal.app.privacy.PrivacyConsent
 import com.fitcal.app.ui.screens.privacy.PrivacyConsentScreen
 import com.fitcal.app.ads.ScanQuotaManager
 import com.fitcal.app.data.PreferenceKeyValueStorage
+import com.fitcal.app.telemetry.Analytics
 import com.fitcal.app.telemetry.CohortRetentionTracker
 import com.fitcal.app.ui.navigation.AuthDestination
 import com.fitcal.app.ui.navigation.CameraDestination
@@ -51,6 +52,8 @@ import com.fitcal.app.ui.screens.review.ResultScreen
 import com.fitcal.app.ui.screens.settings.SettingsScreen
 import com.fitcal.app.ui.theme.BgColor
 import com.fitcal.app.ui.theme.FitCalTheme
+import com.fitcal.shared.api.FeedbackRequest
+import com.fitcal.shared.api.FeedbackSendResult
 import com.fitcal.shared.api.GatewayNutritionClient
 import com.fitcal.shared.auth.SupabaseAuthService
 import com.fitcal.shared.auth.SupabaseClientFactory
@@ -64,6 +67,8 @@ import com.fitcal.shared.model.UserProfile
 import com.fitcal.app.telemetry.DiagnosticLevel
 import com.fitcal.app.telemetry.DiagnosticsCrashHook
 import com.fitcal.shared.telemetry.TelemetryUploader
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -104,6 +109,21 @@ fun App() {
                 reAuthenticator = { authService.ensureSignedIn() },
                 dailyAllowanceProvider = { ScanQuotaManager.getDailyFreeLimit() },
             )
+        }
+    }
+    // GatewayNutritionClient — JWT injected from auth service at call time.
+    // Phase 10: reAuthenticator re-establishes the session on 401/missing JWT
+    // so a stale/expired token triggers re-auth + one retry instead of the
+    // "Authentication required" dead-end.
+    val apiClient = remember {
+        GatewayNutritionClient(
+            gatewayUrl = gatewayUrl,
+            jwtProvider = { authService.currentSession()?.accessToken },
+            reAuthenticator = { authService.ensureSignedIn() },
+            dailyAllowanceProvider = { ScanQuotaManager.getDailyFreeLimit() }
+        ).also { client ->
+            // Events queue on the device from here on; nothing is recorded before consent.
+            Analytics.init(sender = client::sendEvents)
         }
     }
     val syncEngine = remember {
@@ -186,7 +206,14 @@ fun App() {
     if (!privacyAccepted) {
         FitCalTheme {
             PrivacyConsentScreen(
-                onDecisionComplete = { privacyAccepted = true },
+                onDecisionComplete = {
+                    privacyAccepted = true
+                    Analytics.onPrivacyStateChanged()
+                    Analytics.track(
+                        "consent_completed",
+                        "ads_personalized" to PrivacyConsent.isAdsPersonalizationEnabled(),
+                    )
+                },
                 onOpenPrivacyPolicy = { showLegalDocument = true },
                 onOpenTerms = { showLegalDocument = true },
             )
@@ -203,6 +230,7 @@ fun App() {
                 onComplete = {
                     AgeGate.setAcknowledged(true)
                     ageAcknowledged = true
+                    Analytics.track("age_gate_completed")
                     userProfileCautionAccepted = it
                 },
             )
@@ -236,6 +264,8 @@ fun App() {
             var userEmail by remember { mutableStateOf(accountEmailOrNull()) }
             var signingOut by remember { mutableStateOf(false) }
             var signOutMessage by remember { mutableStateOf<String?>(null) }
+            var deletingAccount by remember { mutableStateOf(false) }
+            var deleteAccountMessage by remember { mutableStateOf<String?>(null) }
             var totalMealsLogged by remember { mutableStateOf(0) }
             LaunchedEffect(Unit) { totalMealsLogged = localMealRepository.getAllMeals().size }
 
@@ -249,11 +279,19 @@ fun App() {
                 val previousUserId = authService.getUserId()
                 val wasGuest = !authService.isPermanentUser()
                 signIn()
-                if (wasGuest && authService.getUserId() != previousUserId) {
+                val switchedUser = authService.getUserId() != previousUserId
+                if (wasGuest && switchedUser) {
                     accountData.mergeGuestMealsIntoCurrentAccount()
+                }
+                when {
+                    // Same user, now permanent: the guest was upgraded in place.
+                    wasGuest && !switchedUser && authService.isPermanentUser() ->
+                        Analytics.track("account_created", "meals_logged" to totalMealsLogged)
+                    switchedUser -> Analytics.track("signed_in", "was_guest" to wasGuest)
                 }
                 userEmail = accountEmailOrNull()
                 signOutMessage = null
+                setCrashReportingUser(authService.getUserId())
                 try {
                     (mealRepository as? com.fitcal.shared.data.SupabaseMealRepository)?.pullRemote(selectedDateKey)
                     (userRepository as? com.fitcal.shared.data.SupabaseUserRepository)?.pullRemote(selectedDateKey)
@@ -293,6 +331,7 @@ fun App() {
                         }
                     )
                     userEmail = accountEmailOrNull()
+                    setCrashReportingUser(userId)
                     ScanQuotaManager.remoteQuotaManager = quotaManager
                     ScanQuotaManager.syncQuotaFromServer(selectedDateKey)
                     scansRemainingToday = ScanQuotaManager.getRemainingScans(selectedDateKey)
@@ -316,6 +355,16 @@ fun App() {
 
                 // Record active retention session for cohort tracking
                 CohortRetentionTracker.recordActiveDailySession(selectedDateKey)
+                Analytics.track(
+                    "app_open",
+                    "online" to (userId != null),
+                    "is_guest" to (userEmail == null),
+                    "premium" to com.fitcal.shared.subscription.SubscriptionManager.isPremiumUser(),
+                    "days_since_install" to CohortRetentionTracker.getDaysSinceInstall(),
+                    "free_scan_limit" to ScanQuotaManager.getDailyFreeLimit(),
+                    "scans_remaining" to scansRemainingToday,
+                    "meals_logged_total" to totalMealsLogged,
+                )
 
                 // ── Step 2: Boot-side effects (only after JWT confirmed) ─────────────────
                 if (userId != null) {
@@ -323,7 +372,7 @@ fun App() {
                     (mealRepository as? com.fitcal.shared.data.SupabaseMealRepository)?.pullRemote(selectedDateKey)
                     (userRepository as? com.fitcal.shared.data.SupabaseUserRepository)?.pullRemote(selectedDateKey)
                     syncEngine.flushOutbox()
-                    TelemetryUploader.triggerFlush()
+                    Analytics.flush()
                 }
 
                 // Ad preload + Meal Scan Reminder Notifications
@@ -365,17 +414,23 @@ fun App() {
                 }
             }
 
-            // GatewayNutritionClient — JWT injected from auth service at call time.
-            // Phase 10: reAuthenticator re-establishes the session on 401/missing JWT
-            // so a stale/expired token triggers re-auth + one retry instead of the
-            // "Authentication required" dead-end.
-            val apiClient = remember {
-                GatewayNutritionClient(
-                    gatewayUrl = gatewayUrl,
-                    jwtProvider = { authService.currentSession()?.accessToken },
-                    reAuthenticator = { authService.ensureSignedIn() },
-                    dailyAllowanceProvider = { ScanQuotaManager.getDailyFreeLimit() }
-                )
+            // ── Analytics: sessions, periodic upload, screen views ─────────────────
+            LifecycleEventEffect(Lifecycle.Event.ON_START) { Analytics.onForeground() }
+            LifecycleEventEffect(Lifecycle.Event.ON_STOP) { Analytics.onBackground() }
+            LaunchedEffect(authReady) {
+                while (authReady == true) {
+                    delay(60_000)
+                    Analytics.flush()
+                }
+            }
+            LaunchedEffect(navController) {
+                navController.currentBackStackEntryFlow.collect { entry ->
+                    // Type-safe routes look like "com.fitcal.app.ui.navigation.CameraDestination/{arg}".
+                    val screen = entry.destination.route.orEmpty()
+                        .substringBefore('/').substringBefore('?')
+                        .substringAfterLast('.').removeSuffix("Destination").lowercase()
+                    if (screen.isNotEmpty()) Analytics.screen(screen)
+                }
             }
 
             // Client-side mock mode is retired. The gateway controls mock responses via FITCAL_ENV=dev.
@@ -396,8 +451,10 @@ fun App() {
                         scansRemaining = scansRemainingToday,
                         onDateSelected = { newDate ->
                             selectedDateKey = newDate
+                            Analytics.track("date_selected", "is_today" to (newDate == getCurrentDateString()))
                         },
                         onWaterChanged = { newWater ->
+                            Analytics.track("water_changed", "increased" to (newWater > waterLoggedToday))
                             coroutineScope.launch {
                                 userRepository.setWaterIntake(selectedDateKey, newWater)
                             }
@@ -415,11 +472,13 @@ fun App() {
                             navController.navigate(MonetizationDestination)
                         },
                         onDeleteMeal = { mealToDelete ->
+                            Analytics.track("meal_deleted")
                             coroutineScope.launch {
                                 mealRepository.deleteMeal(mealToDelete.id)
                             }
                         },
                         onRestoreMeal = { mealToRestore ->
+                            Analytics.track("meal_delete_undone")
                             coroutineScope.launch {
                                 mealRepository.saveMeal(mealToRestore)
                             }
@@ -493,6 +552,7 @@ fun App() {
                                 date = selectedDateKey
                             )
                             totalMealsLogged += 1
+                            if (totalMealsLogged == 1) Analytics.track("first_meal_logged")
                             coroutineScope.launch {
                                 mealRepository.saveMeal(newMeal)
                             }
@@ -509,9 +569,37 @@ fun App() {
                                 totalMealsLogged = totalMealsLogged,
                             )
                         },
-                        onSignInSuggestionShown = { SignInPromptPolicy.recordShown() },
-                        onSignInSuggestionDismissed = { SignInPromptPolicy.recordDismissed() },
+                        onRateEstimate = { positive, reasons ->
+                            Analytics.track(
+                                "scan_rated",
+                                "positive" to positive,
+                                "reasons" to reasons,
+                                "items_ai" to nutritionData.items.size,
+                            )
+                            coroutineScope.launch {
+                                apiClient.submitFeedback(
+                                    FeedbackRequest(
+                                        kind = "scan_accuracy",
+                                        rating = if (positive) 5 else 1,
+                                        context = Analytics.toJson(
+                                            mapOf("reasons" to reasons, "items_ai" to nutritionData.items.size)
+                                        ),
+                                        app_version = appVersionName,
+                                        platform = platformName,
+                                    )
+                                )
+                            }
+                        },
+                        onSignInSuggestionShown = {
+                            SignInPromptPolicy.recordShown()
+                            Analytics.track("sign_in_prompt_shown", "meals_logged" to totalMealsLogged)
+                        },
+                        onSignInSuggestionDismissed = {
+                            SignInPromptPolicy.recordDismissed()
+                            Analytics.track("sign_in_prompt_dismissed")
+                        },
                         onCreateAccount = {
+                            Analytics.track("sign_in_prompt_accepted")
                             lastCapturedImageBytes = null
                             navController.navigate(AuthDestination) {
                                 popUpTo(DashboardDestination)
@@ -550,6 +638,8 @@ fun App() {
                                 if (accountData.syncAndCountPending() > 0) {
                                     signOutMessage = "Some changes haven't synced yet. Connect to the internet and try again so nothing is lost."
                                 } else {
+                                    Analytics.track("signed_out")
+                                    Analytics.flush()
                                     accountData.clearLocalData()
                                     authService.signOut()
                                     userEmail = accountEmailOrNull()
@@ -563,6 +653,15 @@ fun App() {
                             }
                         },
                         onSave = { updated ->
+                            Analytics.track(
+                                "profile_saved",
+                                "goals_changed" to (updated.calGoal != userProfile.calGoal ||
+                                    updated.proteinGoal != userProfile.proteinGoal ||
+                                    updated.carbsGoal != userProfile.carbsGoal ||
+                                    updated.fatGoal != userProfile.fatGoal),
+                                "goal_type" to updated.goalType,
+                                "plate_size_changed" to (updated.defaultPlateSize != userProfile.defaultPlateSize),
+                            )
                             coroutineScope.launch {
                                 userRepository.saveUserProfile(updated)
                                 userProfile = updated
@@ -572,14 +671,26 @@ fun App() {
                         onBack = {
                             navController.popBackStack()
                         },
+                        deletingAccount = deletingAccount,
+                        deleteAccountMessage = deleteAccountMessage,
                         onDeleteAllData = {
                             // Play requires a real account-deletion path, and GDPR
                             // Art. 17 requires the request actually be honoured.
                             coroutineScope.launch {
+                                deletingAccount = true
+                                deleteAccountMessage = null
                                 val confirmed = apiClient.deleteAccount()
+                                deletingAccount = false
+                                // On success the server erases this user's events too, so only
+                                // failures are recorded here (the gateway counts deletions).
+                                if (!confirmed) {
+                                    Analytics.track("account_delete_failed")
+                                    deleteAccountMessage = "We couldn't delete your account. Check your connection and try again. Nothing was removed from this device."
+                                }
                                 if (confirmed) {
                                     accountData.clearLocalData()
                                     PrivacyConsent.clearAll()
+                                    Analytics.onPrivacyStateChanged()
                                     AgeGate.reset()
                                     privacyAccepted = false
                                     ageAcknowledged = false
@@ -593,6 +704,22 @@ fun App() {
                         },
                         onOpenTerms = {
                             navController.navigate(TermsDestination)
+                        },
+                        onSendFeedback = { kind, message, email ->
+                            val result = apiClient.submitFeedback(
+                                FeedbackRequest(
+                                    kind = kind,
+                                    message = message,
+                                    contact_email = email,
+                                    context = Analytics.toJson(
+                                        mapOf("is_guest" to (userEmail == null), "meals_logged" to totalMealsLogged)
+                                    ),
+                                    app_version = appVersionName,
+                                    platform = platformName,
+                                )
+                            )
+                            Analytics.track("feedback_sent", "kind" to kind, "result" to result, "with_email" to (email != null))
+                            result
                         },
                     )
                 }
@@ -635,14 +762,39 @@ fun App() {
                             }
                         }
                     }
+                    // Auth funnel: which methods people try, and why they fail.
+                    var socialMethod by remember { mutableStateOf("") }
+                    suspend fun <T> trackedEmailAuth(flow: String, block: suspend () -> T): T =
+                        try {
+                            block()
+                        } catch (e: Exception) {
+                            Analytics.track(
+                                "auth_failed",
+                                "method" to "email",
+                                "flow" to flow,
+                                "error" to (e::class.simpleName ?: "Exception"),
+                            )
+                            throw e
+                        }
+
                     val onNativeResult: (NativeSignInResult) -> Unit = { result ->
                         socialInProgress = false
                         when (result) {
                             is NativeSignInResult.Success -> finish()
-                            is NativeSignInResult.ClosedByUser -> Unit
-                            is NativeSignInResult.NetworkError -> socialError = AuthMessages.NETWORK
-                            is NativeSignInResult.Error ->
+                            is NativeSignInResult.ClosedByUser ->
+                                Analytics.track("auth_cancelled", "method" to socialMethod)
+                            is NativeSignInResult.NetworkError -> {
+                                Analytics.track("auth_failed", "method" to socialMethod, "error" to "network")
+                                socialError = AuthMessages.NETWORK
+                            }
+                            is NativeSignInResult.Error -> {
+                                Analytics.track(
+                                    "auth_failed",
+                                    "method" to socialMethod,
+                                    "error" to (result.exception?.let { it::class.simpleName } ?: "unknown"),
+                                )
                                 socialError = result.exception?.let { AuthMessages.forError(it) } ?: AuthMessages.GENERIC
+                            }
                         }
                     }
                     val googleSignIn = supabaseClient.composeAuth.rememberSignInWithGoogle(
@@ -665,11 +817,19 @@ fun App() {
                     AuthScreen(
                         actions = AuthActions(
                             signIn = { email, password ->
-                                switchAccount { authService.signInWithEmail(email, password) }
+                                trackedEmailAuth("sign_in") {
+                                    switchAccount { authService.signInWithEmail(email, password) }
+                                }
                                 finish()
                             },
                             startSignUp = { email, password ->
-                                val start = authService.startEmailSignUp(email, password)
+                                val start = trackedEmailAuth("sign_up_start") {
+                                    authService.startEmailSignUp(email, password)
+                                }
+                                Analytics.track(
+                                    "sign_up_started",
+                                    "outcome" to (start::class.simpleName ?: "unknown"),
+                                )
                                 if (start == EmailSignUpStart.Completed) {
                                     switchAccount {}
                                     finish()
@@ -677,12 +837,19 @@ fun App() {
                                 start
                             },
                             completeSignUp = { email, code, password ->
-                                switchAccount { authService.completeEmailSignUp(email, code, password) }
+                                trackedEmailAuth("sign_up_verify") {
+                                    switchAccount { authService.completeEmailSignUp(email, code, password) }
+                                }
                                 finish()
                             },
-                            requestPasswordReset = { email -> authService.requestPasswordReset(email) },
+                            requestPasswordReset = { email ->
+                                Analytics.track("password_reset_requested")
+                                authService.requestPasswordReset(email)
+                            },
                             completePasswordReset = { email, code, newPassword ->
-                                switchAccount { authService.completePasswordReset(email, code, newPassword) }
+                                trackedEmailAuth("password_reset") {
+                                    switchAccount { authService.completePasswordReset(email, code, newPassword) }
+                                }
                                 finish()
                             },
                         ),
@@ -690,11 +857,15 @@ fun App() {
                             showGoogle = isGoogleSignInAvailable,
                             showApple = isAppleSignInAvailable,
                             onGoogle = {
+                                socialMethod = "google"
+                                Analytics.track("auth_started", "method" to "google")
                                 socialError = null
                                 socialInProgress = true
                                 googleSignIn.startFlow()
                             },
                             onApple = {
+                                socialMethod = "apple"
+                                Analytics.track("auth_started", "method" to "apple")
                                 socialError = null
                                 socialInProgress = true
                                 appleSignIn.startFlow()

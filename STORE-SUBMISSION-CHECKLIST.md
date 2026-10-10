@@ -10,12 +10,13 @@ Play Console / AdMob account setup.
 ### App content
 | Field | Value | Why |
 |---|---|---|
-| Privacy policy URL | *(host `privacy.html` — see §4)* | **Mandatory.** Rejection without it. |
+| Privacy policy URL | *(host `site/privacy.html` — see §4)* | **Mandatory.** Rejection without it. |
 | Ads | Yes | AdMob SDKs are bundled |
 | Target audience — age group | **18 and over only** | FitCal is a calorie/nutrition app. Declaring 13–17 triggers the **Families policy** and mandatory child-directed treatment (Certified Ads Program, no personalized ads, restricted SDKs). Declaring 18+ is honest *and* far cheaper to satisfy. |
 | News app | No | |
 | COVID-19 app | No | |
 | Content rating questionnaire | Declare: user-generated content **No**, ads **Yes**, health **No** | Anything resembling a health claim escalates review. Do not claim diagnosis/treatment. |
+| Health apps declaration | Health & Fitness → **Nutrition and weight management** only. Not a medical device, no medical features. | Every app must fill this in now. Calorie tracking is a health feature; ticking anything medical brings extra review and documentation. |
 | Government app | No | |
 | Financial features | No | |
 
@@ -28,8 +29,10 @@ the conservative answer protects you in review:
 | Does your app collect or share user data? | **Yes** |
 | Data collected | Account email (optional), Photos/Pictures, Fitness/Health, App activity, Crash logs, Device IDs |
 | Encrypted in transit? | **Yes** (TLS only; `usesCleartextTraffic=false`) |
-| Can users request data deletion? | **Yes** — in-app: Settings → Privacy → "Delete my account and data" |
-| Data shared with third parties | **Yes** — advertising partner (Google AdMob), and AI inference providers (OpenRouter, Google, Groq) |
+| Can users request data deletion? | **Yes** — in-app: Settings → Privacy → "Delete my account and data"; web link: `…/privacy.html#delete` |
+| Data shared with third parties | **Yes** — advertising partner (Google AdMob), and AI inference providers (OpenRouter, Google, Groq). Sentry (crash reports) is a service provider acting for us, which Play does not count as "sharing", but declare Crash logs + Diagnostics as *collected* |
+| Feedback | Declare **Other user-generated content** (feedback messages) and **Email address** (optional reply address). Purpose: App functionality / Developer communications. Optional, user-initiated |
+| App activity detail | App interactions (screens, scan funnel, corrections as counts), in-app actions. Purpose: **Analytics**. Optional: users can turn it off in Settings → Privacy → Share usage analytics |
 | Purposes | Analytics, Advertising or marketing, App functionality, Personalization |
 
 ### Required store assets
@@ -94,35 +97,43 @@ for adults 18+. It is not a substitute for professional medical or dietary advic
 
 ---
 
-## 4. Host the privacy policy (do this first)
+## 4. Host the privacy policy and app-ads.txt (do this first)
 
-The in-app text lives at `FitCal-UI/src/commonMain/kotlin/com/fitcal/app/ui/screens/privacy/PrivacyPolicyScreen.kt`.
-For the store listing you also need a **public URL**. Host the static `privacy.html` (the old
-Cloudflare Worker that served `/privacy` has been removed). The same domain should also host
-`app-ads.txt`, which AdMob requires:
+`site/` is ready to publish as-is, with no build step:
+- `site/index.html`: a small landing page (it can be your Play "developer website").
+- `site/privacy.html`: the privacy policy and terms. The **`#delete`** section is the
+  "delete account" web link Play asks for in the Data safety form.
+- `site/app-ads.txt`: your AdMob seller line (publisher id from the App ID in the manifest).
+
+Host it at **`https://fitcal.tecaa.xyz`** (AdMob reads `app-ads.txt` from the exact host of
+the developer website; only `www.`/`m.` are stripped, so a subdomain works):
 ```bash
-# From the repo root — one file, no build step
-cp privacy.html public/index.html
-npx vercel deploy public --prod     # or: netlify deploy --prod --dir=public
+npx vercel deploy site --prod        # then add fitcal.tecaa.xyz as the project's domain
 ```
+DNS at your registrar: `CNAME fitcal → cname.vercel-dns.com`.
+
+Play Console / AdMob URLs:
+- Developer website: `https://fitcal.tecaa.xyz/`
+- Privacy policy: `https://fitcal.tecaa.xyz/privacy.html`
+- Account deletion: `https://fitcal.tecaa.xyz/privacy.html#delete`
+- app-ads.txt (AdMob checks it): `https://fitcal.tecaa.xyz/app-ads.txt`
 
 Replace every placeholder before publishing:
-- `privacy@fitcal.app` — use a mailbox you actually monitor (reviewers test it)
-- `Last updated: October 2026` — set the real publish date
-- Add your legal entity name and jurisdiction if you have one
+- `fitcal@tecaa.xyz` is the single FitCal contact (support, privacy, deletion requests, Play developer
+  email). It must actually receive mail before you publish, because reviewers test it: use Name.com
+  Email Forwarding. Keep `site/privacy.html` and `PrivacyPolicyScreen.kt` in sync if it changes.
+- `Last updated: October 2026`: set the real publish date.
+- Add your legal entity name and jurisdiction if you have one.
 
 **The hosted page and the in-app text must agree.** If they diverge, that is itself a
 compliance finding.
-
----
 
 ## 5. Test account for reviewers
 
 Both Play and AdMob reviewers want to try the app without signing up. Add a note to the
 listing:
 
-> **Reviewer access:** Email `review@fitcal.app` / password `FitCalReview2026!`.
-> (Or: the app works fully as a guest — no account required.)
+> **Reviewer access:** no account required — the app works fully as a guest.
 
 Prefer the **guest path** if it works end to end: fewer credentials to leak, and it proves
 the onboarding claim.
@@ -132,13 +143,14 @@ the onboarding claim.
 ## 6. Final pre-submission checklist
 
 - [x] `./gradlew :FitCal-UI:testDebugUnitTest` and `:FitCal-UI:bundleRelease` pass (fully compiler-verified & release AAB generated)
-- [x] Hardened `analyze-meal` Edge Function deployed (v7, 2026-10-07)
-- [x] Migrations 0005–0007 applied to production
+- [x] Hardened `analyze-meal` Edge Function deployed (v8, 2026-10-07)
+- [x] Migrations 0005–0009 applied to production
 - [ ] `REVENUECAT_WEBHOOK_SECRET` set in Supabase Edge Function secrets (entitlements fail closed without it)
 - [ ] ~~Real iOS AdMob app id~~ — iOS is out of v1
 - [ ] Privacy policy published at a public URL
 - [ ] Data safety form completed per §1
 - [ ] Target audience set to **18+** (NOT 13–17)
 - [ ] Consent screen → age gate → app verified on a real device
+- [x] Gateway routes `/v1/account/delete` and `/v1/reward/ad-earned` deployed (migrations 0008–0009, function v8; tested 2026-10-07)
 - [ ] "Delete my account and data" confirmed to actually delete
 - [ ] Personalized ads off by default; CMP appears for an EEA emulator/IP
